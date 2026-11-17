@@ -1,0 +1,4 @@
+# Владелец проверок: тесты и CI. PR, меняющий их, зовёт владельца (home/workflow.md, «Проверка»).
+/tests/                @chebupelka332-pro
+/test/                 @chebupelka332-pro
+/.github/workflows/    @chebupelka332-pro
