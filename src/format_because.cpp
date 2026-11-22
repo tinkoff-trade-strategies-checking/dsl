@@ -16,6 +16,7 @@ namespace {
 constexpr std::size_t kFracDigits = 2;
 constexpr std::size_t kToCharsBufferSize = 64;
 constexpr int kMinRelevantExp = -3;
+constexpr std::chars_format kSciFormat = std::chars_format::scientific;
 
 struct ScientificDecimal {
   std::string Digits;
@@ -100,16 +101,15 @@ std::string formatNumberHalfUp2(double Value) {
   const double AbsValue = std::fabs(Value);
 
   char Buffer[kToCharsBufferSize]{};
-  const std::to_chars_result Conv =
-      std::to_chars(Buffer, Buffer + sizeof(Buffer), AbsValue,
-                    std::chars_format::scientific);
+  char *const BufEnd = Buffer + kToCharsBufferSize;
+  const auto Conv = std::to_chars(Buffer, BufEnd, AbsValue, kSciFormat);
   if (Conv.ec != std::errc{}) {
     return "н/д";
   }
 
   ScientificDecimal Dec;
-  const std::string_view Raw(
-      Buffer, static_cast<std::size_t>(Conv.ptr - Buffer));
+  const auto Len = static_cast<std::size_t>(Conv.ptr - Buffer);
+  const std::string_view Raw(Buffer, Len);
   if (!parseScientific(Raw, Dec)) {
     return "н/д";
   }

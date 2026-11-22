@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "dsl/dsl.hpp"
@@ -43,9 +44,9 @@ rule "выход"
   because "SMA({fast}) опустилась ниже SMA({slow})"
 )dsl";
 
-dsl::Bar makeBar(std::int64_t StepVal, double CloseVal,
-                 double OpenVal = 1.0, double HighVal = 0.0,
-                 double LowVal = 0.0, double VolVal = 100.0) {
+dsl::Bar makeBar(std::int64_t StepVal, double CloseVal, double OpenVal = 1.0,
+                 double HighVal = 0.0, double LowVal = 0.0,
+                 double VolVal = 100.0) {
   dsl::Bar Result;
   Result.Step = StepVal;
   Result.Open = OpenVal;
@@ -56,13 +57,35 @@ dsl::Bar makeBar(std::int64_t StepVal, double CloseVal,
   return Result;
 }
 
+std::vector<dsl::Bar> makeCloseBars(const std::vector<double> &Closes) {
+  std::vector<dsl::Bar> Bars;
+  Bars.reserve(Closes.size());
+  for (std::size_t Idx = 0; Idx < Closes.size(); ++Idx) {
+    Bars.push_back(makeBar(static_cast<std::int64_t>(Idx), Closes[Idx]));
+  }
+  return Bars;
+}
+
+std::vector<dsl::Bar>
+makeCloseOpenBars(const std::vector<std::pair<double, double>> &Pairs) {
+  std::vector<dsl::Bar> Bars;
+  Bars.reserve(Pairs.size());
+  for (std::size_t Idx = 0; Idx < Pairs.size(); ++Idx) {
+    Bars.push_back(makeBar(static_cast<std::int64_t>(Idx), Pairs[Idx].first,
+                           Pairs[Idx].second));
+  }
+  return Bars;
+}
+
 std::vector<double> probePosExpr(std::string_view Expr,
-                                   const std::vector<dsl::Bar> &Bars) {
-  const std::string Source =
-      "rule \"probe\"\n"
-      "  when not is_na(" + std::string(Expr) + ")\n"
-      "  then buy 1 lots limit (" + std::string(Expr) + ")\n"
-      "  because \"v={" + std::string(Expr) + "}\"\n";
+                                 const std::vector<dsl::Bar> &Bars) {
+  std::string Source = "rule \"probe\"\n  when not is_na(";
+  Source += Expr;
+  Source += ")\n  then buy 1 lots limit (";
+  Source += Expr;
+  Source += ")\n  because \"v={";
+  Source += Expr;
+  Source += "}\"\n";
   const auto Compiled = dsl::compile(Source, {}, 1);
   if (!Compiled.Ok || Compiled.Instance == nullptr) {
     ADD_FAILURE() << "Compile failed for probe: " << Expr;
@@ -74,8 +97,8 @@ std::vector<double> probePosExpr(std::string_view Expr,
   Snapshot.Cash = 1'000'000.0;
   Snapshot.Equity = 1'000'000.0;
   for (const auto &CurrentBar : Bars) {
-    const auto Outcome = dsl::step(*Compiled.Instance, 0, CurrentBar,
-                                   Snapshot, false);
+    const auto Outcome =
+        dsl::step(*Compiled.Instance, 0, CurrentBar, Snapshot, false);
     if (Outcome.Error.has_value()) {
       ADD_FAILURE() << "Step error: " << Outcome.Error->Message;
       return Values;
@@ -118,16 +141,12 @@ rule "fmt"
       dsl::step(*Compiled.Instance, 0, makeBar(0, 10.0), Snapshot, false);
   ASSERT_FALSE(Outcome.Error.has_value());
   ASSERT_EQ(Outcome.Intents.size(), 1U);
-  EXPECT_EQ(Outcome.Intents[0].Because,
-            "{x}=1,01; ok=да; fail=нет; na=н/д");
+  EXPECT_EQ(Outcome.Intents[0].Because, "{x}=1,01; ok=да; fail=нет; na=н/д");
 }
 
 TEST(IndicatorsTest, SmaWorkedExampleAndNonDrift) {
-  const std::vector<dsl::Bar> Bars = {
-      makeBar(0, 10.0, 1.0), makeBar(1, 20.0, 1.0),
-      makeBar(2, 99.0, 0.0), makeBar(3, 30.0, 1.0),
-      makeBar(4, 40.0, 1.0),
-  };
+  const auto Bars =
+      makeCloseOpenBars({{10, 1}, {20, 1}, {99, 0}, {30, 1}, {40, 1}});
   const auto Out = probePosExpr("sma(close + 0 / open, 3)", Bars);
   ASSERT_EQ(Out.size(), 5U);
   EXPECT_TRUE(dsl::isNaValue(Out[0]));
@@ -146,11 +165,10 @@ rule "drift"
   ASSERT_TRUE(Compiled.Ok);
   dsl::PortfolioSnapshot Snapshot;
   const std::vector<double> Closes = {1e16, 1.0, 2.0};
+  auto &Inst = *Compiled.Instance;
   for (std::size_t Idx = 0; Idx < Closes.size(); ++Idx) {
-    const auto StepRes = dsl::step(
-        *Compiled.Instance, 0,
-        makeBar(static_cast<std::int64_t>(Idx), Closes[Idx]), Snapshot,
-        false);
+    const auto BarNow = makeBar(static_cast<std::int64_t>(Idx), Closes[Idx]);
+    const auto StepRes = dsl::step(Inst, 0, BarNow, Snapshot, false);
     ASSERT_FALSE(StepRes.Error.has_value());
     if (Idx < 2U) {
       EXPECT_TRUE(StepRes.Intents.empty());
@@ -162,11 +180,8 @@ rule "drift"
 }
 
 TEST(IndicatorsTest, EmaPreservesStateAcrossNa) {
-  const std::vector<dsl::Bar> Bars = {
-      makeBar(0, 10.0, 1.0), makeBar(1, 12.0, 1.0),
-      makeBar(2, 14.0, 1.0), makeBar(3, 99.0, 0.0),
-      makeBar(4, 16.0, 1.0),
-  };
+  const auto Bars =
+      makeCloseOpenBars({{10, 1}, {12, 1}, {14, 1}, {99, 0}, {16, 1}});
   const auto Out = probePosExpr("ema(close + 0 / open, 3)", Bars);
   ASSERT_EQ(Out.size(), 5U);
   EXPECT_TRUE(dsl::isNaValue(Out[0]));
@@ -177,25 +192,21 @@ TEST(IndicatorsTest, EmaPreservesStateAcrossNa) {
 }
 
 TEST(IndicatorsTest, RsiWorkedExamplesAndSubnormalAvgLoss) {
-  const auto Out = probePosExpr(
-      "rsi(close, 2)",
-      {makeBar(0, 100.0), makeBar(1, 102.0), makeBar(2, 101.0),
-       makeBar(3, 104.0)});
+  const auto RsiBars = makeCloseBars({100.0, 102.0, 101.0, 104.0});
+  const auto Out = probePosExpr("rsi(close, 2)", RsiBars);
   ASSERT_EQ(Out.size(), 4U);
   EXPECT_TRUE(dsl::isNaValue(Out[0]));
   EXPECT_TRUE(dsl::isNaValue(Out[1]));
   EXPECT_NEAR(Out[2], 200.0 / 3.0, 1e-12);
   EXPECT_NEAR(Out[3], 800.0 / 9.0, 1e-12);
 
-  const auto Flat = probePosExpr(
-      "rsi(close, 2)",
-      {makeBar(0, 100.0), makeBar(1, 100.0), makeBar(2, 100.0)});
+  const auto FlatBars = makeCloseBars({100.0, 100.0, 100.0});
+  const auto Flat = probePosExpr("rsi(close, 2)", FlatBars);
   ASSERT_EQ(Flat.size(), 3U);
   EXPECT_DOUBLE_EQ(Flat[2], 50.0);
 
-  const auto Up = probePosExpr(
-      "rsi(close, 2)",
-      {makeBar(0, 100.0), makeBar(1, 101.0), makeBar(2, 102.0)});
+  const auto UpBars = makeCloseBars({100.0, 101.0, 102.0});
+  const auto Up = probePosExpr("rsi(close, 2)", UpBars);
   ASSERT_EQ(Up.size(), 3U);
   EXPECT_DOUBLE_EQ(Up[2], 100.0);
 
@@ -224,17 +235,16 @@ TEST(IndicatorsTest, AtrWorkedExample) {
 }
 
 TEST(IndicatorsTest, StdevWorkedExamplesAndTwoPass) {
-  const auto Out = probePosExpr(
-      "stdev(close, 3)",
-      {makeBar(0, 10.0), makeBar(1, 12.0), makeBar(2, 14.0)});
+  const auto StdevBars = makeCloseBars({10.0, 12.0, 14.0});
+  const auto Out = probePosExpr("stdev(close, 3)", StdevBars);
   ASSERT_EQ(Out.size(), 3U);
   EXPECT_TRUE(dsl::isNaValue(Out[0]));
   EXPECT_TRUE(dsl::isNaValue(Out[1]));
   EXPECT_DOUBLE_EQ(Out[2], std::sqrt(8.0 / 3.0));
 
-  const auto Offset = probePosExpr(
-      "stdev(close, 3)",
-      {makeBar(0, 1e9 + 1.0), makeBar(1, 1e9 + 2.0), makeBar(2, 1e9 + 3.0)});
+  const auto OffsetBars =
+      makeCloseBars({1e9 + 1.0, 1e9 + 2.0, 1e9 + 3.0});
+  const auto Offset = probePosExpr("stdev(close, 3)", OffsetBars);
   ASSERT_EQ(Offset.size(), 3U);
   EXPECT_DOUBLE_EQ(Offset[2], std::sqrt(2.0 / 3.0));
 
@@ -270,10 +280,8 @@ TEST(IndicatorsTest, HighestLowestChangeCrossoverAndMath) {
   EXPECT_DOUBLE_EQ(Lo[3], 1.0);
   EXPECT_DOUBLE_EQ(Lo[4], 1.0);
 
-  const std::vector<dsl::Bar> ChgBars = {
-      makeBar(0, 100.0, 1.0), makeBar(1, 99.0, 0.0),
-      makeBar(2, 105.0, 1.0), makeBar(3, 110.0, 1.0),
-  };
+  const auto ChgBars =
+      makeCloseOpenBars({{100, 1}, {99, 0}, {105, 1}, {110, 1}});
   const auto Chg = probePosExpr("change(close + 0 / open, 2)", ChgBars);
   ASSERT_EQ(Chg.size(), 4U);
   EXPECT_TRUE(dsl::isNaValue(Chg[0]));
@@ -299,15 +307,12 @@ rule "math"
   auto Compiled = dsl::compile(CrossSrc, {}, 1);
   ASSERT_TRUE(Compiled.Ok);
   dsl::PortfolioSnapshot Snapshot;
-  const std::vector<dsl::Bar> CrossBars = {
-      makeBar(0, 12.0, 1.0), makeBar(1, 10.0, 1.0),
-      makeBar(2, 12.0, 1.0), makeBar(3, 99.0, 0.0),
-      makeBar(4, 12.0, 1.0), makeBar(5, 8.0, 1.0),
-  };
+  const auto CrossBars =
+      makeCloseOpenBars({{12, 1}, {10, 1}, {12, 1}, {99, 0}, {12, 1}, {8, 1}});
   std::vector<std::string> Fired;
+  auto &Inst = *Compiled.Instance;
   for (const auto &BarItem : CrossBars) {
-    const auto Res =
-        dsl::step(*Compiled.Instance, 0, BarItem, Snapshot, false);
+    const auto Res = dsl::step(Inst, 0, BarItem, Snapshot, false);
     ASSERT_FALSE(Res.Error.has_value());
     for (const auto &Intent : Res.Intents) {
       if (Intent.RuleName == "math") {
@@ -331,10 +336,12 @@ rule "w"
   auto Compiled = dsl::compile(Src, {}, 1);
   ASSERT_TRUE(Compiled.Ok);
   dsl::PortfolioSnapshot Snapshot;
-  EXPECT_TRUE(dsl::step(*Compiled.Instance, 0, makeBar(0, 11.0), Snapshot,
-                        true).Intents.empty());
-  EXPECT_TRUE(dsl::step(*Compiled.Instance, 0, makeBar(1, 12.0), Snapshot,
-                        true).Intents.empty());
+  const auto Warm0 =
+      dsl::step(*Compiled.Instance, 0, makeBar(0, 11.0), Snapshot, true);
+  EXPECT_TRUE(Warm0.Intents.empty());
+  const auto Warm1 =
+      dsl::step(*Compiled.Instance, 0, makeBar(1, 12.0), Snapshot, true);
+  EXPECT_TRUE(Warm1.Intents.empty());
   const auto Active =
       dsl::step(*Compiled.Instance, 0, makeBar(2, 13.0), Snapshot, false);
   ASSERT_FALSE(Active.Error.has_value());
@@ -415,6 +422,14 @@ rule "false_lazy"
   when false
   then buy 1 lots
   because "{1 / 0}"
+rule "eq_buy"
+  when close == 250
+  then buy 50 % equity
+  because "eq"
+rule "pos_buy"
+  when position >= 4 and close == 10
+  then buy 100 % position
+  because "pb"
 rule "half_sell"
   when position >= 4 and (false and (close / 0 > 0)) == false
   then sell 50 % position day
@@ -432,20 +447,24 @@ rule "cancel_all"
   Snap.LotSize = 10;
   const auto Res0 =
       dsl::step(*Compiled.Instance, 0, makeBar(0, 250.0), Snap, false);
-  ASSERT_EQ(Res0.Intents.size(), 2U);
+  ASSERT_EQ(Res0.Intents.size(), 3U);
   EXPECT_EQ(Res0.Intents[0].Kind, dsl::ActionKind::Buy);
   EXPECT_EQ(Res0.Intents[0].Lots, 380);
-  EXPECT_EQ(Res0.Intents[1].Kind, dsl::ActionKind::Cancel);
-  EXPECT_EQ(Res0.Intents[1].Because, "cancel at 250");
+  EXPECT_EQ(Res0.Intents[1].Kind, dsl::ActionKind::Buy);
+  EXPECT_EQ(Res0.Intents[1].Lots, 200);
+  EXPECT_EQ(Res0.Intents[2].Kind, dsl::ActionKind::Cancel);
+  EXPECT_EQ(Res0.Intents[2].Because, "cancel at 250");
 
   Snap.Position = 5;
   const auto Res1 =
       dsl::step(*Compiled.Instance, 0, makeBar(1, 10.0), Snap, false);
-  ASSERT_EQ(Res1.Intents.size(), 2U);
-  EXPECT_EQ(Res1.Intents[0].Kind, dsl::ActionKind::Sell);
-  EXPECT_EQ(Res1.Intents[0].Lots, 2);
-  EXPECT_EQ(Res1.Intents[0].Tif, dsl::TimeInForce::Day);
-  EXPECT_EQ(Res1.Intents[1].Kind, dsl::ActionKind::Cancel);
+  ASSERT_EQ(Res1.Intents.size(), 3U);
+  EXPECT_EQ(Res1.Intents[0].Kind, dsl::ActionKind::Buy);
+  EXPECT_EQ(Res1.Intents[0].Lots, 5);
+  EXPECT_EQ(Res1.Intents[1].Kind, dsl::ActionKind::Sell);
+  EXPECT_EQ(Res1.Intents[1].Lots, 2);
+  EXPECT_EQ(Res1.Intents[1].Tif, dsl::TimeInForce::Day);
+  EXPECT_EQ(Res1.Intents[2].Kind, dsl::ActionKind::Cancel);
 }
 
 TEST(EngineTest, Ft19DivergenceModeAndPlatformStandard) {
@@ -505,8 +524,8 @@ rule "held"
   ASSERT_EQ(EntryA.Intents.size(), 1U);
   EXPECT_EQ(EntryA.Intents[0].RuleName, "вход");
   EXPECT_EQ(EntryA.Intents[0].Lots, 258);
-  EXPECT_EQ(EntryA.Intents[0].Because,
-            "SMA(20) пересекла SMA(50) снизу вверх");
+  const std::string ExpBecause = "SMA(20) пересекла SMA(50) снизу вверх";
+  EXPECT_EQ(EntryA.Intents[0].Because, ExpBecause);
 
   Port.Position = 258;
   Port.EntryPrice = 120.0;
@@ -539,6 +558,10 @@ rule "held"
   EXPECT_FALSE(StdA.Instance->isCancelled());
   StdA.Instance->requestCancel();
   EXPECT_TRUE(StdA.Instance->isCancelled());
+  const auto AfterCancel =
+      dsl::step(*StdA.Instance, 0, makeBar(225, 50.0), Port, false);
+  EXPECT_FALSE(AfterCancel.Error.has_value());
+  EXPECT_TRUE(AfterCancel.Intents.empty());
 }
 
 } // namespace

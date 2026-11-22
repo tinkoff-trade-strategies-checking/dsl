@@ -53,10 +53,12 @@ std::size_t seriesIndexFromKind(SeriesKind Kind) noexcept {
   return 3;
 }
 
+using ProgramImpl = StrategyInstance::Impl;
+using ActionLotsResult = std::optional<std::int64_t>;
+
 class Evaluator {
 public:
-  Evaluator(const StrategyInstance::Impl &ProgIn,
-            const InstrumentState &InstIn,
+  Evaluator(const ProgramImpl &ProgIn, const InstrumentState &InstIn,
             const PortfolioSnapshot *PortfolioIn)
       : Prog(ProgIn), Inst(InstIn), Portfolio(PortfolioIn) {}
 
@@ -278,14 +280,15 @@ private:
     }
   }
 
-  const StrategyInstance::Impl &Prog;
+  const ProgramImpl &Prog;
   const InstrumentState &Inst;
   const PortfolioSnapshot *Portfolio;
 };
 
-std::optional<std::int64_t>
-computeOrderLots(const CompiledAction &Action, const Evaluator &Eval,
-                 const PortfolioSnapshot &Portfolio, double ClosePrice) {
+ActionLotsResult computeOrderLots(const CompiledAction &Action,
+                                  const Evaluator &Eval,
+                                  const PortfolioSnapshot &Portfolio,
+                                  double ClosePrice) {
   if (Action.Unit == SizeUnit::All) {
     if (Portfolio.Position < 1 || Portfolio.Position > kMaxOrderLots) {
       return std::nullopt;
@@ -302,11 +305,11 @@ computeOrderLots(const CompiledAction &Action, const Evaluator &Eval,
   case SizeUnit::Lots:
     RawLots = SizeVal;
     break;
-  case SizeUnit::PercentPosition:
-    RawLots =
-        normalizeNumber((static_cast<double>(Portfolio.Position) * SizeVal) /
-                        100.0);
+  case SizeUnit::PercentPosition: {
+    const double Pos = static_cast<double>(Portfolio.Position);
+    RawLots = normalizeNumber((Pos * SizeVal) / 100.0);
     break;
+  }
   case SizeUnit::PercentEquity:
   case SizeUnit::PercentCash: {
     if (Portfolio.LotSize <= 0 || !std::isfinite(ClosePrice) ||
@@ -359,9 +362,7 @@ std::size_t StrategyInstance::dagNodeCount() const {
   return Pimpl->DagNodes.size();
 }
 
-std::size_t StrategyInstance::maxLookback() const {
-  return Pimpl->MaxLookback;
-}
+std::size_t StrategyInstance::maxLookback() const { return Pimpl->MaxLookback; }
 
 const std::vector<ParamDecl> &StrategyInstance::params() const {
   return Pimpl->Params;

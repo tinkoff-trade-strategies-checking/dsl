@@ -327,12 +327,12 @@ private:
             }
             return "O(" + TargetKey + "," + std::to_string(Eff) + ")";
           } else if constexpr (std::is_same_v<T, UnaryExpr>) {
-            const std::string OpKey =
-                Inner.Op == UnaryOp::Neg ? "neg" : "not";
-            const std::string SubKey =
-                Inner.Operand ? canonicalExprKey(*Inner.Operand)
-                              : std::string{};
-            return "U(" + OpKey + "," + SubKey + ")";
+            const char *OpKey = (Inner.Op == UnaryOp::Neg) ? "neg" : "not";
+            std::string SubKey;
+            if (Inner.Operand) {
+              SubKey = canonicalExprKey(*Inner.Operand);
+            }
+            return std::string("U(") + OpKey + "," + SubKey + ")";
           } else if constexpr (std::is_same_v<T, BinaryExpr>) {
             const std::string LeftKey =
                 Inner.Left ? canonicalExprKey(*Inner.Left) : std::string{};
@@ -506,8 +506,8 @@ private:
             return pushExpr(OutNode);
           } else if constexpr (std::is_same_v<T, OffsetExpr>) {
             const std::size_t Off = resolveOffset(Inner);
-            if (const auto *Id =
-                    std::get_if<IdentExpr>(&Inner.Target->Node)) {
+            const auto *Id = std::get_if<IdentExpr>(&Inner.Target->Node);
+            if (Id != nullptr) {
               const std::size_t SIdx = seriesIndex(Id->Name).value();
               SeriesMaxOffset[SIdx] = std::max(SeriesMaxOffset[SIdx], Off);
               OutNode.Op = CompiledExprOp::Series;
@@ -541,8 +541,8 @@ private:
               OutNode.Op = CompiledExprOp::DagNode;
               OutNode.Index = It->second;
               OutNode.Offset = 0;
-              OutNode.BoolVal =
-                  isBoolDagKind(Out.DagNodes[It->second].Kind);
+              const DagNodeKind Kind = Out.DagNodes[It->second].Kind;
+              OutNode.BoolVal = isBoolDagKind(Kind);
               return pushExpr(OutNode);
             }
             OutNode.Op = CompiledExprOp::PureCall;
