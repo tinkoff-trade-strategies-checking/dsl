@@ -1,10 +1,12 @@
 include(GoogleTest)
 
 add_executable(dsl_tests
-  build/flags_test.cpp
+  version_test.cpp
   check_test.cpp
   interpreter_test.cpp
-  version_test.cpp)
+  property_test.cpp
+  build/flags_test.cpp)
+
 target_link_libraries(dsl_tests PRIVATE
   dsl::dsl
   GTest::gtest_main

@@ -36,9 +36,7 @@ C++20 библиотека языка стратегий DSL проекта «Т
 - Форматируй только clang-format 18 через `scripts/dev.sh format`, имена проверяет и правит `scripts/dev.sh tidy` / `scripts/dev.sh tidy-fix` (после `tidy-fix` снова `format`).
 
 ## Структура
-- `include/dsl/` — публичные заголовки библиотеки (`dsl/dsl.hpp`, `dsl/types.hpp`, `dsl/version.hpp`, `dsl/ast.hpp`, `dsl/check.hpp`, `dsl/interpreter.hpp`).
-- `src/` — реализация библиотеки `dsl` (цель `dsl::dsl`): `version.cpp`, `lexer.cpp`, `parser.cpp`, `printer.cpp`, `checker.cpp`, `linter.cpp`, `check.cpp`, `indicators.cpp`, `format_because.cpp`, `compiler.cpp`, `interpreter.cpp` и внутренние заголовки `src/internal/{lexer,analysis,indicators,format_because,compiled_program}.hpp`.
-- `tests/` — тесты на GoogleTest и RapidCheck (цель `dsl_tests`): `version_test.cpp`, `check_test.cpp`, `interpreter_test.cpp`, `build/flags_test.cpp` (проверка `-ffp-contract=off`).
+- `tests/` — тесты на GoogleTest и RapidCheck (цель `dsl_tests`): `version_test.cpp`, `check_test.cpp`, `interpreter_test.cpp`, `property_test.cpp`, `build/flags_test.cpp` (проверка `-ffp-contract=off`).
 - `CMakeLists.txt`, `CMakePresets.json` — конфигурация CMake (пресеты `debug`, `release`, `vcpkg-debug`, `vcpkg-release`).
 - `Dockerfile.dev`, `scripts/dev.sh` — Docker-окружение (`pac-dsl-dev`) для сборки, тестов и проверок стиля.
 - `.github/workflows/ci.yml` — CI (`build-test` для `debug` и `release`, `style`, `pr-size`).
