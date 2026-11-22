@@ -112,7 +112,15 @@ struct RuleIntent {
   double RawPrice = kNa;
   TimeInForce Tif = TimeInForce::Gtc;
   std::string Because;
-  bool operator==(const RuleIntent &) const = default;
+  bool operator==(const RuleIntent &Other) const noexcept {
+    const bool PricesEqual =
+        (isNaValue(RawPrice) && isNaValue(Other.RawPrice)) ||
+        RawPrice == Other.RawPrice;
+    return RuleId == Other.RuleId && RuleName == Other.RuleName &&
+           Kind == Other.Kind && OrderKind == Other.OrderKind &&
+           Lots == Other.Lots && PricesEqual && Tif == Other.Tif &&
+           Because == Other.Because;
+  }
 };
 
 struct IntegrityError {
