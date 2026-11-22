@@ -263,10 +263,13 @@ private:
       }
     }
 
-    Output.Tokens.push_back(Token{IsFloat ? TokenKind::FloatLit
-                                          : TokenKind::IntLit,
-                                  std::string(NumView), ParsedDouble, ParsedInt,
-                                  {StartPos, EndPos}});
+    Token Tok;
+    Tok.Kind = IsFloat ? TokenKind::FloatLit : TokenKind::IntLit;
+    Tok.Text = std::string(NumView);
+    Tok.NumericValue = ParsedDouble;
+    Tok.IntValue = ParsedInt;
+    Tok.Range = {StartPos, EndPos};
+    Output.Tokens.push_back(std::move(Tok));
   }
 
   void lexStringLiteral() {
@@ -283,8 +286,11 @@ private:
         ++CurPos;
         ++CurCol;
         const SourcePos EndPos = currentPos();
-        Output.Tokens.push_back(Token{TokenKind::StringLit, std::string(Body),
-                                      0.0, 0, {StartPos, EndPos}});
+        Token Tok;
+        Tok.Kind = TokenKind::StringLit;
+        Tok.Text = std::string(Body);
+        Tok.Range = {StartPos, EndPos};
+        Output.Tokens.push_back(std::move(Tok));
         return;
       }
       if (Ch == '\n' || Ch == '\r') {
@@ -332,8 +338,10 @@ private:
   void lexOperatorOrPunctuation() {
     const SourcePos StartPos = currentPos();
     const char Ch = Input[CurPos];
-    const char NextCh =
-        (CurPos + 1 < Input.size()) ? Input[CurPos + 1] : '\0';
+    char NextCh = '\0';
+    if (CurPos + 1 < Input.size()) {
+      NextCh = Input[CurPos + 1];
+    }
 
     auto emitToken = [&](TokenKind Kind, std::size_t Len) {
       const std::string_view Lexeme = Input.substr(CurPos, Len);
@@ -420,6 +428,22 @@ private:
   LexResult Output;
 };
 
+bool isContByte(std::uint8_t Byte) noexcept {
+  return Byte >= 0x80U && Byte <= 0xBFU;
+}
+
+LexResult makeFatalError(SourcePos Pos, std::string Message) {
+  LexResult Res;
+  Res.HasFatalError = true;
+  Diagnostic Diag;
+  Diag.Code = "E-SYN";
+  Diag.Severity = DiagnosticSeverity::Error;
+  Diag.Range = {Pos, Pos};
+  Diag.Message = std::move(Message);
+  Res.Diagnostics.push_back(std::move(Diag));
+  return Res;
+}
+
 } // namespace
 
 bool isValidUtf8(std::string_view Text) {
@@ -436,7 +460,7 @@ bool isValidUtf8(std::string_view Text) {
         return false;
       }
       const auto B1 = static_cast<std::uint8_t>(Text[Index + 1]);
-      if (B1 < 0x80U || B1 > 0xBFU) {
+      if (!isContByte(B1)) {
         return false;
       }
       Index += 2;
@@ -448,7 +472,7 @@ bool isValidUtf8(std::string_view Text) {
       }
       const auto B1 = static_cast<std::uint8_t>(Text[Index + 1]);
       const auto B2 = static_cast<std::uint8_t>(Text[Index + 2]);
-      if (B1 < 0xA0U || B1 > 0xBFU || B2 < 0x80U || B2 > 0xBFU) {
+      if (B1 < 0xA0U || B1 > 0xBFU || !isContByte(B2)) {
         return false;
       }
       Index += 3;
@@ -460,7 +484,7 @@ bool isValidUtf8(std::string_view Text) {
       }
       const auto B1 = static_cast<std::uint8_t>(Text[Index + 1]);
       const auto B2 = static_cast<std::uint8_t>(Text[Index + 2]);
-      if (B1 < 0x80U || B1 > 0xBFU || B2 < 0x80U || B2 > 0xBFU) {
+      if (!isContByte(B1) || !isContByte(B2)) {
         return false;
       }
       Index += 3;
@@ -472,7 +496,7 @@ bool isValidUtf8(std::string_view Text) {
       }
       const auto B1 = static_cast<std::uint8_t>(Text[Index + 1]);
       const auto B2 = static_cast<std::uint8_t>(Text[Index + 2]);
-      if (B1 < 0x80U || B1 > 0x9FU || B2 < 0x80U || B2 > 0xBFU) {
+      if (B1 < 0x80U || B1 > 0x9FU || !isContByte(B2)) {
         return false;
       }
       Index += 3;
@@ -485,8 +509,7 @@ bool isValidUtf8(std::string_view Text) {
       const auto B1 = static_cast<std::uint8_t>(Text[Index + 1]);
       const auto B2 = static_cast<std::uint8_t>(Text[Index + 2]);
       const auto B3 = static_cast<std::uint8_t>(Text[Index + 3]);
-      if (B1 < 0x90U || B1 > 0xBFU || B2 < 0x80U || B2 > 0xBFU ||
-          B3 < 0x80U || B3 > 0xBFU) {
+      if (B1 < 0x90U || B1 > 0xBFU || !isContByte(B2) || !isContByte(B3)) {
         return false;
       }
       Index += 4;
@@ -499,8 +522,7 @@ bool isValidUtf8(std::string_view Text) {
       const auto B1 = static_cast<std::uint8_t>(Text[Index + 1]);
       const auto B2 = static_cast<std::uint8_t>(Text[Index + 2]);
       const auto B3 = static_cast<std::uint8_t>(Text[Index + 3]);
-      if (B1 < 0x80U || B1 > 0xBFU || B2 < 0x80U || B2 > 0xBFU ||
-          B3 < 0x80U || B3 > 0xBFU) {
+      if (!isContByte(B1) || !isContByte(B2) || !isContByte(B3)) {
         return false;
       }
       Index += 4;
@@ -513,8 +535,7 @@ bool isValidUtf8(std::string_view Text) {
       const auto B1 = static_cast<std::uint8_t>(Text[Index + 1]);
       const auto B2 = static_cast<std::uint8_t>(Text[Index + 2]);
       const auto B3 = static_cast<std::uint8_t>(Text[Index + 3]);
-      if (B1 < 0x80U || B1 > 0x8FU || B2 < 0x80U || B2 > 0xBFU ||
-          B3 < 0x80U || B3 > 0xBFU) {
+      if (B1 < 0x80U || B1 > 0x8FU || !isContByte(B2) || !isContByte(B3)) {
         return false;
       }
       Index += 4;
@@ -527,26 +548,12 @@ bool isValidUtf8(std::string_view Text) {
 
 LexResult lex(std::string_view Source) {
   if (Source.size() > kMaxSourceBytes) {
-    LexResult Res;
-    Res.HasFatalError = true;
-    Res.Diagnostics.push_back(Diagnostic{
-        "E-SYN",
-        DiagnosticSeverity::Error,
-        {{0, 0}, {0, 0}},
-        "Превышен максимальный размер текста стратегии (64 КиБ)",
-        {}});
-    return Res;
+    const std::string Msg = "Превышен максимальный размер текста (64 КиБ)";
+    return makeFatalError({0, 0}, Msg);
   }
   if (!isValidUtf8(Source)) {
-    LexResult Res;
-    Res.HasFatalError = true;
-    Res.Diagnostics.push_back(
-        Diagnostic{"E-SYN",
-                   DiagnosticSeverity::Error,
-                   {{0, 0}, {0, 0}},
-                   "Текст стратегии не является валидным UTF-8",
-                   {}});
-    return Res;
+    const std::string Msg = "Текст стратегии не является валидным UTF-8";
+    return makeFatalError({0, 0}, Msg);
   }
   Lexer LexerState(Source, {1, 1}, false);
   return LexerState.run();
@@ -554,15 +561,8 @@ LexResult lex(std::string_view Source) {
 
 LexResult lexInlineExpr(std::string_view ExprText, SourcePos Origin) {
   if (!isValidUtf8(ExprText)) {
-    LexResult Res;
-    Res.HasFatalError = true;
-    Res.Diagnostics.push_back(
-        Diagnostic{"E-SYN",
-                   DiagnosticSeverity::Error,
-                   {Origin, Origin},
-                   "Выражение в because не является валидным UTF-8",
-                   {}});
-    return Res;
+    const std::string Msg = "Выражение в because не является валидным UTF-8";
+    return makeFatalError(Origin, Msg);
   }
   Lexer LexerState(ExprText, Origin, true);
   return LexerState.run();

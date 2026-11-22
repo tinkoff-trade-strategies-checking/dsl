@@ -4,7 +4,6 @@
 #include "dsl/types.hpp"
 
 #include <algorithm>
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -69,8 +68,7 @@ std::vector<LineInfo> buildLineIndex(std::string_view Source) {
 }
 
 std::size_t posToByteOffset(std::string_view Source,
-                            const std::vector<LineInfo> &Lines,
-                            SourcePos Pos) {
+                            const std::vector<LineInfo> &Lines, SourcePos Pos) {
   if (Pos.Line == 0 || Pos.Line > Lines.size()) {
     return Source.size();
   }
@@ -153,12 +151,14 @@ AnchorPoint computeAnchor(const Program &Ast, std::string_view Source,
 }
 
 bool isKeyword(std::string_view Name) noexcept {
-  static constexpr std::array<std::string_view, 23> kKeywords = {
-      "param", "range", "step", "rule", "when", "then", "because", "buy",
-      "sell", "cancel", "lots", "all", "market", "limit", "stop",
-      "take_profit", "day", "gtc", "and", "or", "not", "true", "false"};
-  return std::find(kKeywords.begin(), kKeywords.end(), Name) !=
-         kKeywords.end();
+  return Name == "param" || Name == "range" || Name == "step" ||
+         Name == "rule" || Name == "when" || Name == "then" ||
+         Name == "because" || Name == "buy" || Name == "sell" ||
+         Name == "cancel" || Name == "lots" || Name == "all" ||
+         Name == "market" || Name == "limit" || Name == "stop" ||
+         Name == "take_profit" || Name == "day" || Name == "gtc" ||
+         Name == "and" || Name == "or" || Name == "not" || Name == "true" ||
+         Name == "false";
 }
 
 std::optional<BuiltinFuncInfo> getBuiltinFuncInfo(std::string_view Name) {

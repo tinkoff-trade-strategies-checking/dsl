@@ -52,8 +52,7 @@ std::size_t countCode(const std::vector<dsl::Diagnostic> &Diags,
   return Count;
 }
 
-bool hasCode(const std::vector<dsl::Diagnostic> &Diags,
-             std::string_view Code) {
+bool hasCode(const std::vector<dsl::Diagnostic> &Diags, std::string_view Code) {
   return countCode(Diags, Code) > 0;
 }
 
@@ -331,8 +330,9 @@ TEST(CheckTest, Phase3LookaheadDetection) {
   EXPECT_EQ(countCode(ElaLit.Diagnostics, "E-LA01"), 1U);
   EXPECT_EQ(ElaLit.Lookahead, dsl::LookaheadLevel::Error);
 
-  const auto ElaZero = dsl::check(
-      "rule \"r\" when close[-0] > 0 then cancel because \"x\"");
+  const std::string ZeroSrc =
+      "rule \"r\" when close[-0] > 0 then cancel because \"x\"";
+  const auto ElaZero = dsl::check(ZeroSrc);
   EXPECT_EQ(countCode(ElaZero.Diagnostics, "E-LA01"), 0U);
   EXPECT_EQ(ElaZero.Lookahead, dsl::LookaheadLevel::Warning);
 
@@ -341,15 +341,17 @@ TEST(CheckTest, Phase3LookaheadDetection) {
   EXPECT_EQ(countCode(ElaParam.Diagnostics, "E-LA01"), 1U);
   EXPECT_EQ(ElaParam.Lookahead, dsl::LookaheadLevel::Error);
 
-  const auto ElaRange = dsl::check(
+  const std::string RangeSrc =
       "param p = 1 range -5..5 step 1\n"
-      "rule \"r\" when close[p] > 0 then cancel because \"x\"");
+      "rule \"r\" when close[p] > 0 then cancel because \"x\"";
+  const auto ElaRange = dsl::check(RangeSrc);
   EXPECT_EQ(countCode(ElaRange.Diagnostics, "E-LA02"), 1U);
   EXPECT_EQ(ElaRange.Lookahead, dsl::LookaheadLevel::Error);
 
-  const auto OkNegRange = dsl::check(
+  const std::string NegRangeSrc =
       "param p = 0 range -5..0 step 1\n"
-      "rule \"r\" when close[-p] > 0 then cancel because \"x\"");
+      "rule \"r\" when close[-p] > 0 then cancel because \"x\"";
+  const auto OkNegRange = dsl::check(NegRangeSrc);
   EXPECT_EQ(countCode(OkNegRange.Diagnostics, "E-LA01"), 0U);
   EXPECT_EQ(OkNegRange.Lookahead, dsl::LookaheadLevel::Warning);
 
@@ -359,12 +361,20 @@ TEST(CheckTest, Phase3LookaheadDetection) {
   EXPECT_EQ(countCode(WlaSma.Diagnostics, "W-LA01"), 1U);
   EXPECT_EQ(WlaSma.Lookahead, dsl::LookaheadLevel::Warning);
 
-  const auto WlaNested = dsl::check(
+  const std::string NestedSrc =
       "param a = 10\nparam b = 20\nparam lvl = 250\n"
       "rule \"r\" when ema(sma(close, a), b) > lvl then cancel\n"
-      "  because \"x\"");
+      "  because \"x\"";
+  const auto WlaNested = dsl::check(NestedSrc);
   EXPECT_EQ(countCode(WlaNested.Diagnostics, "W-LA01"), 0U);
   EXPECT_EQ(WlaNested.Lookahead, dsl::LookaheadLevel::Ok);
+
+  const std::string HugeNeg =
+      "param p = -100000000000000000000\n"
+      "rule \"r\" when sma(close[p], 10) > 0 then cancel because \"x\"";
+  const auto HugeNegRes = dsl::check(HugeNeg);
+  EXPECT_EQ(countCode(HugeNegRes.Diagnostics, "E-LA01"), 1U);
+  EXPECT_EQ(HugeNegRes.Lookahead, dsl::LookaheadLevel::Error);
 }
 
 TEST(CheckTest, Phase4LinterAndAutoFixes) {

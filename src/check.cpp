@@ -37,9 +37,13 @@ CheckResult check(std::string_view Source,
   internal::AnalysisState State = internal::analyzeSemantics(
       Parsed.Ast, ParamOverrides, Result.Diagnostics);
 
-  const bool HasSyntaxError = std::any_of(
-      Result.Diagnostics.begin(), Result.Diagnostics.end(),
-      [](const Diagnostic &Diag) { return Diag.Code == "E-SYN"; });
+  bool HasSyntaxError = false;
+  for (const auto &Diag : Result.Diagnostics) {
+    if (Diag.Code == "E-SYN") {
+      HasSyntaxError = true;
+      break;
+    }
+  }
   if (HasSyntaxError) {
     sortDiagnostics(Result.Diagnostics);
     return Result;

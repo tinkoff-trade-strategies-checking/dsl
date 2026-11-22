@@ -283,8 +283,7 @@ private:
     if (Ast.AstNodeCount > kMaxAstNodes) {
       if (!AstNodeLimitReported) {
         AstNodeLimitReported = true;
-        emitSyntaxError(Range,
-                        "Превышено максимальное число узлов AST (2000)");
+        emitSyntaxError(Range, "Превышено максимальное число узлов AST (2000)");
       }
       return false;
     }
@@ -538,9 +537,11 @@ private:
 
     auto flushLiteral = [&](std::size_t EndCol) {
       if (!LiteralBuf.empty()) {
-        Out.Parts.push_back(TemplatePart{
-            false, std::move(LiteralBuf), nullptr,
-            {{Line, PartStartCol}, {Line, EndCol}}});
+        TemplatePart Part;
+        Part.IsExpr = false;
+        Part.LiteralText = std::move(LiteralBuf);
+        Part.Range = {{Line, PartStartCol}, {Line, EndCol}};
+        Out.Parts.push_back(std::move(Part));
         LiteralBuf.clear();
       }
     };
@@ -640,9 +641,11 @@ private:
           }
         }
         if (SubExpr) {
-          Out.Parts.push_back(TemplatePart{
-              true, "", std::move(SubExpr),
-              {{Line, OpenBraceCol}, {Line, CloseEndCol}}});
+          TemplatePart Part;
+          Part.IsExpr = true;
+          Part.Expression = std::move(SubExpr);
+          Part.Range = {{Line, OpenBraceCol}, {Line, CloseEndCol}};
+          Out.Parts.push_back(std::move(Part));
         }
         continue;
       }
@@ -776,8 +779,8 @@ private:
         return nullptr;
       }
       const SourceRange Span{Left->Range.Start, Right->Range.End};
-      return makeExpr(
-          Span, BinaryExpr{*CmpOp, std::move(Left), std::move(Right)});
+      BinaryExpr CmpNode{*CmpOp, std::move(Left), std::move(Right)};
+      return makeExpr(Span, std::move(CmpNode));
     }
     return Left;
   }
@@ -845,9 +848,8 @@ private:
   }
   ExprPtr parsePostfixExpr() {
     if (check(TokenKind::Ident)) {
-      ExprPtr Target = (peek(1).Kind == TokenKind::LParen)
-                           ? parseCallExpr()
-                           : parseIdentExpr();
+      const bool IsCall = (peek(1).Kind == TokenKind::LParen);
+      ExprPtr Target = IsCall ? parseCallExpr() : parseIdentExpr();
       if (!Target) {
         return nullptr;
       }

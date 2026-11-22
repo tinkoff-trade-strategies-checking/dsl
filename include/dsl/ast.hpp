@@ -15,20 +15,7 @@ enum class ValueType { Number, Bool, Error };
 
 enum class UnaryOp { Neg, Not };
 
-enum class BinaryOp {
-  Or,
-  And,
-  Eq,
-  Ne,
-  Lt,
-  Le,
-  Gt,
-  Ge,
-  Add,
-  Sub,
-  Mul,
-  Div
-};
+enum class BinaryOp { Or, And, Eq, Ne, Lt, Le, Gt, Ge, Add, Sub, Mul, Div };
 
 enum class SizeUnit { Lots, PercentEquity, PercentCash, PercentPosition, All };
 

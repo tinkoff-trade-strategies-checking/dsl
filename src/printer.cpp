@@ -160,6 +160,18 @@ void appendEscapedString(std::string &Out, std::string_view Text,
   }
 }
 
+Precedence childPrecedence(const ExprPtr &Child) noexcept {
+  return Child ? exprPrecedence(*Child) : Precedence::Primary;
+}
+
+bool precGe(Precedence Left, Precedence Right) noexcept {
+  return static_cast<int>(Left) >= static_cast<int>(Right);
+}
+
+bool precGt(Precedence Left, Precedence Right) noexcept {
+  return static_cast<int>(Left) > static_cast<int>(Right);
+}
+
 void printExprTo(std::string &Out, const Expr &Node);
 
 void printChildWithParens(std::string &Out, const Expr &Child,
@@ -214,40 +226,30 @@ void printExprTo(std::string &Out, const Expr &Node) {
           }
           Out.push_back(')');
         } else if constexpr (std::is_same_v<T, UnaryExpr>) {
-          const Precedence ChildPrec =
-              Inner.Operand ? exprPrecedence(*Inner.Operand)
-                            : Precedence::Primary;
+          const Precedence ChildPrec = childPrecedence(Inner.Operand);
           if (Inner.Op == UnaryOp::Neg) {
             Out.push_back('-');
-            const bool NeedParens =
-                static_cast<int>(ChildPrec) >=
-                static_cast<int>(Precedence::UnaryNeg);
+            const bool NeedParens = precGe(ChildPrec, Precedence::UnaryNeg);
             if (Inner.Operand) {
               printChildWithParens(Out, *Inner.Operand, NeedParens);
             }
           } else {
             Out += "not ";
-            const bool NeedParens =
-                static_cast<int>(ChildPrec) >=
-                static_cast<int>(Precedence::Not);
+            const bool NeedParens = precGe(ChildPrec, Precedence::Not);
             if (Inner.Operand) {
               printChildWithParens(Out, *Inner.Operand, NeedParens);
             }
           }
         } else if constexpr (std::is_same_v<T, BinaryExpr>) {
           const Precedence ParentPrec = exprPrecedence(Node);
-          const Precedence LeftPrec =
-              Inner.Left ? exprPrecedence(*Inner.Left) : Precedence::Primary;
-          const Precedence RightPrec =
-              Inner.Right ? exprPrecedence(*Inner.Right) : Precedence::Primary;
+          const Precedence LeftPrec = childPrecedence(Inner.Left);
+          const Precedence RightPrec = childPrecedence(Inner.Right);
           const bool IsComparison = (ParentPrec == Precedence::Compare);
-          const bool LeftParens =
-              IsComparison ? (static_cast<int>(LeftPrec) >=
-                              static_cast<int>(ParentPrec))
-                           : (static_cast<int>(LeftPrec) >
-                              static_cast<int>(ParentPrec));
-          const bool RightParens =
-              static_cast<int>(RightPrec) >= static_cast<int>(ParentPrec);
+          bool LeftParens = precGt(LeftPrec, ParentPrec);
+          if (IsComparison) {
+            LeftParens = precGe(LeftPrec, ParentPrec);
+          }
+          const bool RightParens = precGe(RightPrec, ParentPrec);
           if (Inner.Left) {
             printChildWithParens(Out, *Inner.Left, LeftParens);
           }

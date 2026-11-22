@@ -145,8 +145,12 @@ private:
     if (Code == "E-TYPE" || Code == "E-BEC") {
       State.HasPhase2Errors = true;
     }
-    OutDiagnostics.push_back(Diagnostic{std::move(Code), Severity, Range,
-                                        std::move(Message), {}});
+    Diagnostic Diag;
+    Diag.Code = std::move(Code);
+    Diag.Severity = Severity;
+    Diag.Range = Range;
+    Diag.Message = std::move(Message);
+    OutDiagnostics.push_back(std::move(Diag));
   }
 
   void emitTypeError(SourceRange Range, std::string Message) {
@@ -163,23 +167,23 @@ private:
                      const std::map<std::string, double> &ParamOverrides) {
     for (const auto &Param : Ast.Params) {
       if (isBuiltinName(Param.Name)) {
-        emitTypeError(Param.NameRange,
-                      "Имя параметра '" + Param.Name +
-                          "' совпадает со встроенным именем");
+        std::string Msg = "Имя параметра '" + Param.Name;
+        Msg += "' совпадает со встроенным именем";
+        emitTypeError(Param.NameRange, std::move(Msg));
         continue;
       }
       if (State.ParamMap.contains(Param.Name)) {
-        emitTypeError(Param.NameRange,
-                      "Повторное объявление параметра '" + Param.Name + "'");
+        std::string Msg = "Повторное объявление параметра '" + Param.Name + "'";
+        emitTypeError(Param.NameRange, std::move(Msg));
         continue;
       }
 
       bool Valid = true;
       bool DefaultInRange = true;
       if (!std::isfinite(Param.DefaultValue)) {
-        emitTypeError(Param.DefaultRange,
-                      "Значение параметра '" + Param.Name +
-                          "' должно быть конечным числом");
+        std::string Msg = "Значение параметра '" + Param.Name;
+        Msg += "' должно быть конечным числом";
+        emitTypeError(Param.DefaultRange, std::move(Msg));
         Valid = false;
         DefaultInRange = false;
       }
@@ -256,17 +260,17 @@ private:
       ResolvedParam &Resolved = It->second;
       ParamMeta &Meta = MetaMap.at(Key);
       if (!std::isfinite(Val)) {
-        emitTypeError({{0, 0}, {0, 0}},
-                      "Переопределение параметра '" + Key +
-                          "' должно быть конечным числом");
+        std::string Msg = "Переопределение параметра '" + Key;
+        Msg += "' должно быть конечным числом";
+        emitTypeError({{0, 0}, {0, 0}}, std::move(Msg));
         Resolved.Valid = false;
         continue;
       }
       if (Resolved.HasRange && Resolved.RangeMin <= Resolved.RangeMax &&
           (Val < Resolved.RangeMin || Val > Resolved.RangeMax)) {
-        emitTypeError({{0, 0}, {0, 0}},
-                      "Переопределение параметра '" + Key +
-                          "' выходит за пределы range");
+        std::string Msg = "Переопределение параметра '" + Key;
+        Msg += "' выходит за пределы range";
+        emitTypeError({{0, 0}, {0, 0}}, std::move(Msg));
         Resolved.Valid = false;
         continue;
       }
@@ -379,9 +383,9 @@ private:
       }
       if (Stmt.HasStep && std::isfinite(Stmt.StepValue) &&
           Stmt.StepValue > 0.0 && !isIntValue(Stmt.StepValue)) {
-        emitTypeError(Stmt.StepRange,
-                      "Шаг целочисленного параметра '" + Name +
-                          "' должен быть целым");
+        std::string Msg = "Шаг целочисленного параметра '" + Name;
+        Msg += "' должен быть целым";
+        emitTypeError(Stmt.StepRange, std::move(Msg));
         Resolved.Valid = false;
       }
       if (Meta.HasValidOverride && !isIntValue(Resolved.EffectiveValue)) {
@@ -499,10 +503,9 @@ private:
     }
     if (isPortfolioVar(Id.Name)) {
       if (InStatefulArg) {
-        emitTypeError(Range,
-                      "Переменная портфеля '" + Id.Name +
-                          "' запрещена внутри индикаторов и межбаровых "
-                          "функций");
+        std::string Msg = "Переменная портфеля '" + Id.Name;
+        Msg += "' запрещена внутри индикаторов и межбаровых функций";
+        emitTypeError(Range, std::move(Msg));
         return ValueType::Error;
       }
       return ValueType::Number;
@@ -526,18 +529,18 @@ private:
         Offset.Target->ResolvedType = ValueType::Number;
         TargetOk = true;
       } else if (isPortfolioVar(Id->Name)) {
-        emitTypeError(Range,
-                      "Индексация [...] для переменной портфеля '" +
-                          Id->Name + "' запрещена");
+        std::string Msg = "Индексация [...] для переменной портфеля '";
+        Msg += Id->Name + "' запрещена";
+        emitTypeError(Range, std::move(Msg));
         Offset.Target->ResolvedType = ValueType::Error;
       } else if (State.ParamMap.contains(Id->Name)) {
-        emitTypeError(Range,
-                      "Индексация [...] для параметра '" + Id->Name +
-                          "' запрещена");
+        std::string Msg = "Индексация [...] для параметра '" + Id->Name;
+        Msg += "' запрещена";
+        emitTypeError(Range, std::move(Msg));
         Offset.Target->ResolvedType = ValueType::Error;
       } else {
-        emitTypeError(Offset.Target->Range,
-                      "Неизвестный идентификатор '" + Id->Name + "'");
+        std::string Msg = "Неизвестный идентификатор '" + Id->Name + "'";
+        emitTypeError(Offset.Target->Range, std::move(Msg));
         Offset.Target->ResolvedType = ValueType::Error;
       }
     } else if (const auto *Call = std::get_if<CallExpr>(&Offset.Target->Node)) {
@@ -547,9 +550,9 @@ private:
         if (Spec.has_value() && Spec->AllowsOffset) {
           TargetOk = true;
         } else {
-          emitTypeError(Range,
-                        "Индексация [...] для функции '" + Call->Callee +
-                            "' запрещена");
+          std::string Msg = "Индексация [...] для функции '" + Call->Callee;
+          Msg += "' запрещена";
+          emitTypeError(Range, std::move(Msg));
         }
       }
     } else {
@@ -573,9 +576,9 @@ private:
 
     const auto It = State.ParamMap.find(Offset.OffsetIdent);
     if (It == State.ParamMap.end()) {
-      emitTypeError(Offset.OffsetRange,
-                    "Неизвестный параметр '" + Offset.OffsetIdent +
-                        "' в смещении");
+      std::string Msg = "Неизвестный параметр '" + Offset.OffsetIdent;
+      Msg += "' в смещении";
+      emitTypeError(Offset.OffsetRange, std::move(Msg));
       return ValueType::Error;
     }
     const ResolvedParam &Param = It->second;
@@ -682,9 +685,9 @@ private:
     if (const auto *Id = std::get_if<IdentExpr>(&Arg.Node)) {
       const auto It = State.ParamMap.find(Id->Name);
       if (It == State.ParamMap.end()) {
-        emitTypeError(Arg.Range,
-                      "Неизвестный параметр '" + Id->Name +
-                          "' в позиции периода");
+        std::string Msg = "Неизвестный параметр '" + Id->Name;
+        Msg += "' в позиции периода";
+        emitTypeError(Arg.Range, std::move(Msg));
         Arg.ResolvedType = ValueType::Error;
         return false;
       }
@@ -698,9 +701,9 @@ private:
           (Param.HasRange &&
            (Param.RangeMin < 1.0 ||
             Param.RangeMax > static_cast<double>(kMaxLookback)))) {
-        emitTypeError(Arg.Range,
-                      "Период параметра '" + Id->Name +
-                          "' должен лежать в пределах 1..5000");
+        std::string Msg = "Период параметра '" + Id->Name;
+        Msg += "' должен лежать в пределах 1..5000";
+        emitTypeError(Arg.Range, std::move(Msg));
         Arg.ResolvedType = ValueType::Error;
         return false;
       }
@@ -727,9 +730,9 @@ private:
       return ValueType::Error;
     }
     if (Call.Args.size() != Spec->Arity) {
-      emitTypeError(Range,
-                    "Неверное число аргументов для функции '" + Call.Callee +
-                        "'");
+      std::string Msg = "Неверное число аргументов для функции '";
+      Msg += Call.Callee + "'";
+      emitTypeError(Range, std::move(Msg));
       const bool ChildStateful = InStatefulArg || Spec->IsDagNode;
       for (auto &Arg : Call.Args) {
         if (Arg) {
@@ -756,9 +759,9 @@ private:
       if (ArgType == ValueType::Error) {
         AllValid = false;
       } else if (ArgType != ValueType::Number) {
-        emitTypeError(Call.Args[I]->Range,
-                      "Аргумент функции '" + Call.Callee +
-                          "' должен иметь числовой тип");
+        std::string Msg = "Аргумент функции '" + Call.Callee;
+        Msg += "' должен иметь числовой тип";
+        emitTypeError(Call.Args[I]->Range, std::move(Msg));
         AllValid = false;
       }
     }
@@ -807,27 +810,32 @@ private:
             }
             return "I:" + Inner.Name;
           } else if constexpr (std::is_same_v<T, OffsetExpr>) {
-            std::int64_t Eff = 0;
+            double EffVal = 0.0;
             if (Inner.OffsetIsIdent) {
               const auto It = State.ParamMap.find(Inner.OffsetIdent);
-              const double Val = (It != State.ParamMap.end())
-                                     ? It->second.EffectiveValue
-                                     : 0.0;
-              const double SignedVal = Inner.HasUnaryMinus ? -Val : Val;
-              Eff = static_cast<std::int64_t>(SignedVal);
+              if (It != State.ParamMap.end()) {
+                EffVal = It->second.EffectiveValue;
+              }
+              if (Inner.HasUnaryMinus) {
+                EffVal = -EffVal;
+              }
             } else {
-              Eff = Inner.HasUnaryMinus ? -Inner.OffsetInt : Inner.OffsetInt;
+              const std::int64_t EffInt =
+                  Inner.HasUnaryMinus ? -Inner.OffsetInt : Inner.OffsetInt;
+              EffVal = static_cast<double>(EffInt);
             }
-            const std::string TargetKey =
-                Inner.Target ? canonicalExprKey(*Inner.Target) : std::string{};
-            return "O(" + TargetKey + "," + std::to_string(Eff) + ")";
+            std::string TargetKey;
+            if (Inner.Target) {
+              TargetKey = canonicalExprKey(*Inner.Target);
+            }
+            return "O(" + TargetKey + "," + encodeDouble(EffVal) + ")";
           } else if constexpr (std::is_same_v<T, UnaryExpr>) {
-            const std::string OpKey =
-                Inner.Op == UnaryOp::Neg ? "neg" : "not";
-            const std::string SubKey =
-                Inner.Operand ? canonicalExprKey(*Inner.Operand)
-                              : std::string{};
-            return "U(" + OpKey + "," + SubKey + ")";
+            const char *OpKey = Inner.Op == UnaryOp::Neg ? "neg" : "not";
+            std::string SubKey;
+            if (Inner.Operand) {
+              SubKey = canonicalExprKey(*Inner.Operand);
+            }
+            return std::string("U(") + OpKey + "," + SubKey + ")";
           } else if constexpr (std::is_same_v<T, BinaryExpr>) {
             const std::string LeftKey =
                 Inner.Left ? canonicalExprKey(*Inner.Left) : std::string{};
