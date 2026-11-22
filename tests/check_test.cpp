@@ -379,10 +379,11 @@ TEST(CheckTest, Phase3LookaheadDetection) {
   EXPECT_EQ(countCode(WlaSmaOffset0.Diagnostics, "W-LA01"), 1U);
   EXPECT_EQ(WlaSmaOffset0.Lookahead, dsl::LookaheadLevel::Warning);
 
-  const auto WlaNestedOffset = dsl::check(
+  const std::string NestedOffsetSrc =
       "param a = 10\nparam b = 20\nparam lvl = 250\n"
       "rule \"r\" when ema(sma(close, a), b)[1] > lvl then cancel\n"
-      "  because \"x\"");
+      "  because \"x\"";
+  const auto WlaNestedOffset = dsl::check(NestedOffsetSrc);
   EXPECT_EQ(countCode(WlaNestedOffset.Diagnostics, "W-LA01"), 0U);
   EXPECT_EQ(WlaNestedOffset.Lookahead, dsl::LookaheadLevel::Ok);
 
@@ -559,9 +560,10 @@ TEST(CheckTest, DagZeroOffsetCanonicalizationAt256Limit) {
   ASSERT_NE(Compiled.Instance, nullptr);
   EXPECT_EQ(Compiled.Instance->dagNodeCount(), dsl::kMaxDagNodes);
 
-  const std::string OverLimitSrc =
-      Src + "rule \"extra\" when sma(close[1], 10) > 0 "
-            "then cancel because \"x\"\n";
+  const std::string ExtraRule =
+      "rule \"extra\" when sma(close[1], 10) > 0\n"
+      "  then cancel because \"x\"\n";
+  const std::string OverLimitSrc = Src + ExtraRule;
   const auto CheckErr = dsl::check(OverLimitSrc);
   EXPECT_EQ(countCode(CheckErr.Diagnostics, "E-SYN"), 1U);
 }
