@@ -242,8 +242,7 @@ TEST(IndicatorsTest, StdevWorkedExamplesAndTwoPass) {
   EXPECT_TRUE(dsl::isNaValue(Out[1]));
   EXPECT_DOUBLE_EQ(Out[2], std::sqrt(8.0 / 3.0));
 
-  const auto OffsetBars =
-      makeCloseBars({1e9 + 1.0, 1e9 + 2.0, 1e9 + 3.0});
+  const auto OffsetBars = makeCloseBars({1e9 + 1.0, 1e9 + 2.0, 1e9 + 3.0});
   const auto Offset = probePosExpr("stdev(close, 3)", OffsetBars);
   ASSERT_EQ(Offset.size(), 3U);
   EXPECT_DOUBLE_EQ(Offset[2], std::sqrt(2.0 / 3.0));
