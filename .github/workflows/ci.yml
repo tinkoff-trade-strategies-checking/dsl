@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Зависимости
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            g++-13 cmake ninja-build pkg-config \
+            libgtest-dev librapidcheck-dev
+
+      - name: Конфигурация (Debug)
+        run: cmake --preset debug
+        env:
+          CC: gcc-13
+          CXX: g++-13
+
+      - name: Сборка (Debug)
+        run: cmake --build --preset debug -j2
+
+      - name: Тесты (Debug)
+        run: ctest --preset debug
+
+      - name: Конфигурация (Release)
+        run: cmake --preset release
+        env:
+          CC: gcc-13
+          CXX: g++-13
+
+      - name: Сборка (Release)
+        run: cmake --build --preset release -j2
+
+      - name: Тесты (Release)
+        run: ctest --preset release
+
+  style:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Образ для сборки
+        run: scripts/dev.sh image
+
+      - name: Формат (clang-format, LLVM)
+        run: scripts/dev.sh format-check
+
+      - name: Имена (clang-tidy, readability-identifier-naming)
+        run: scripts/dev.sh tidy
+
+  # Размер PR в режиме наблюдения: не падает, только предупреждение (home#29).
+  pr-size:
+    if: github.event_name == 'pull_request'
+    uses: tinkoff-trade-strategies-checking/.github/.github/workflows/pr-size.yml@main
