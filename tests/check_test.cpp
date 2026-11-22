@@ -560,9 +560,8 @@ TEST(CheckTest, DagZeroOffsetCanonicalizationAt256Limit) {
   ASSERT_NE(Compiled.Instance, nullptr);
   EXPECT_EQ(Compiled.Instance->dagNodeCount(), dsl::kMaxDagNodes);
 
-  const std::string ExtraRule =
-      "rule \"extra\" when sma(close[1], 10) > 0\n"
-      "  then cancel because \"x\"\n";
+  const std::string ExtraRule = "rule \"extra\" when sma(close[1], 10) > 0\n"
+                                "  then cancel because \"x\"\n";
   const std::string OverLimitSrc = Src + ExtraRule;
   const auto CheckErr = dsl::check(OverLimitSrc);
   EXPECT_EQ(countCode(CheckErr.Diagnostics, "E-SYN"), 1U);
