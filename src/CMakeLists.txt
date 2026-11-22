@@ -1,6 +1,10 @@
 add_library(dsl
   check.cpp
   checker.cpp
+  compiler.cpp
+  format_because.cpp
+  indicators.cpp
+  interpreter.cpp
   lexer.cpp
   linter.cpp
   parser.cpp
