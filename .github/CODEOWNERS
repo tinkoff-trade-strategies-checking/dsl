@@ -2,3 +2,7 @@
 /tests/                @chebupelka332-pro
 /test/                 @chebupelka332-pro
 /.github/workflows/    @chebupelka332-pro
+/.clang-format         @chebupelka332-pro
+/.clang-tidy           @chebupelka332-pro
+/CMakeLists.txt        @chebupelka332-pro
+/scripts/              @chebupelka332-pro

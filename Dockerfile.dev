@@ -1,0 +1,18 @@
+# Образ для сборки и тестов DSL: быстрый путь для разработки и CI (зависимости из apt, без vcpkg).
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential g++-13 cmake ninja-build pkg-config ca-certificates git \
+        libgtest-dev librapidcheck-dev \
+        clang-format-18 clang-tidy-18 \
+    && ln -s /usr/bin/clang-format-18 /usr/local/bin/clang-format \
+    && ln -s /usr/bin/clang-tidy-18 /usr/local/bin/clang-tidy \
+    && ln -s /usr/bin/run-clang-tidy-18 /usr/local/bin/run-clang-tidy \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV CC=gcc-13 CXX=g++-13
+
+WORKDIR /src
