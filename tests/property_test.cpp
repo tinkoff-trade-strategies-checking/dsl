@@ -44,6 +44,8 @@ struct GenContext {
   std::size_t EmittedMagic = 0;
 };
 
+template <std::size_t N> using SArr = std::array<const char *, N>;
+
 template <typename T, std::size_t N>
 const T &pickArray(const std::array<T, N> &Items) {
   const auto Idx = *rc::gen::inRange<std::size_t>(0, N);
@@ -66,13 +68,11 @@ std::size_t countDiagCode(const std::vector<Diagnostic> &Diags,
   return Count;
 }
 
-bool hasDiagCode(const std::vector<Diagnostic> &Diags,
-                 std::string_view Code) {
+bool hasDiagCode(const std::vector<Diagnostic> &Diags, std::string_view Code) {
   return countDiagCode(Diags, Code) > 0;
 }
 
-std::vector<TextEdit>
-collectL001Edits(const std::vector<Diagnostic> &Diags) {
+std::vector<TextEdit> collectL001Edits(const std::vector<Diagnostic> &Diags) {
   std::vector<TextEdit> Edits;
   for (const auto &Diag : Diags) {
     if (Diag.Code != "L001") {
@@ -99,8 +99,7 @@ std::string genNonMagicNumText(bool IntegerOnly) {
   if (IntegerOnly) {
     return *rc::gen::arbitrary<bool>() ? "1" : "100";
   }
-  static constexpr std::array<const char *, 5> kVals = {"0", "1", "100",
-                                                        "0.0", "1.0"};
+  static constexpr SArr<5> kVals = {"0", "1", "100", "0.0", "1.0"};
   return pickArray(kVals);
 }
 
@@ -117,8 +116,7 @@ std::string genNumberLit(GenContext &Ctx, bool IntegerOnly,
     return genIntMagicText(2, 250);
   }
   if (AllowUnaryMinus && *rc::gen::arbitrary<bool>()) {
-    static constexpr std::array<const char *, 4> kNegMagic = {
-        "-1", "-2.5", "-0.75", "-100"};
+    static constexpr SArr<4> kNegMagic = {"-1", "-2.5", "-0.75", "-100"};
     return pickArray(kNegMagic);
   }
   static constexpr std::array<const char *, 6> kPosMagic = {
@@ -167,10 +165,9 @@ std::string maybeParens(const ExprPiece &Piece, bool Force) {
   return Piece.Text;
 }
 
-ExprPiece genNumberExpr(GenContext &Ctx, std::size_t Depth,
-                        bool InStatefulArg, bool AllowUnaryMinus) {
-  static constexpr std::array<const char *, 5> kSeries = {
-      "open", "high", "low", "close", "volume"};
+ExprPiece genNumberExpr(GenContext &Ctx, std::size_t Depth, bool InStatefulArg,
+                        bool AllowUnaryMinus) {
+  static constexpr SArr<5> kSeries = {"open", "high", "low", "close", "volume"};
   static constexpr std::array<const char *, 5> kPortfolio = {
       "position", "entry_price", "cash", "equity", "bars_in_position"};
   static constexpr std::array<const char *, 7> kSeriesFuncs = {
@@ -189,8 +186,7 @@ ExprPiece genNumberExpr(GenContext &Ctx, std::size_t Depth,
     return {Ctx.Params[Idx].Name, 0};
   }
   if (Kind <= 3) {
-    const std::string Lit =
-        genNumberLit(Ctx, false, AllowUnaryMinus, false);
+    const std::string Lit = genNumberLit(Ctx, false, AllowUnaryMinus, false);
     const int Prec = (!Lit.empty() && Lit.front() == '-') ? 1 : 0;
     const bool IsUnit =
         (Lit == "1" || Lit == "1.0" || Lit == "100" || Lit == "100.0");
@@ -219,8 +215,7 @@ ExprPiece genNumberExpr(GenContext &Ctx, std::size_t Depth,
     return {std::string(Fn) + "(" + A.Text + ", " + B.Text + ")", 0};
   }
   if (Kind == 6) {
-    const ExprPiece Inner =
-        genNumberExpr(Ctx, Depth - 1, InStatefulArg, false);
+    const ExprPiece Inner = genNumberExpr(Ctx, Depth - 1, InStatefulArg, false);
     if (Inner.IsPosUnit) {
       if (Ctx.MagicBudget == 0) {
         return Inner;
@@ -245,8 +240,7 @@ ExprPiece genNumberExpr(GenContext &Ctx, std::size_t Depth,
 }
 
 ExprPiece genBoolExpr(GenContext &Ctx, std::size_t Depth) {
-  static constexpr std::array<const char *, 6> kCmpOps = {
-      "<", "<=", ">", ">=", "==", "!="};
+  static constexpr SArr<6> kCmpOps = {"<", "<=", ">", ">=", "==", "!="};
 
   const int MaxKind = (Depth == 0) ? 4 : 8;
   const int Kind = *rc::gen::inRange<int>(0, MaxKind);
@@ -258,8 +252,7 @@ ExprPiece genBoolExpr(GenContext &Ctx, std::size_t Depth) {
     return {"is_na(" + Arg.Text + ")", 0};
   }
   if (Kind == 2) {
-    const char *Fn =
-        *rc::gen::arbitrary<bool>() ? "crossover" : "crossunder";
+    const char *Fn = *rc::gen::arbitrary<bool>() ? "crossover" : "crossunder";
     const ExprPiece A = genNumberExpr(Ctx, Depth, true, true);
     const ExprPiece B = genNumberExpr(Ctx, Depth, true, true);
     return {std::string(Fn) + "(" + A.Text + ", " + B.Text + ")", 0};
@@ -336,8 +329,7 @@ std::string genActionText(GenContext &Ctx) {
 }
 std::string genBecauseText(GenContext &Ctx) {
   static constexpr std::array<const char *, 6> kLiterals = {
-      "signal ", "cross {{ok}} ", "quote \\\"x\\\" ", "slash \\\\ ",
-      "вход ", "level={{1}} "};
+      "a ", "{{b}} ", "\\\"c\\\" ", "\\\\ ", "вход ", "{{1}}"};
   const int Parts = *rc::gen::inRange<int>(1, 4);
   std::string Out = "\"";
   bool HasContent = false;
@@ -556,21 +548,22 @@ RC_GTEST_PROP(DslProperty, NegativeOffsetAlwaysFlagged, ()) {
   const int Mode = *rc::gen::inRange<int>(0, 3);
   const auto K = *rc::gen::inRange<int>(1, 100);
 
+  const std::string KStr = std::to_string(K);
   std::string Src;
   if (Mode == 0) {
-    Src = Generated.Source +
-          "rule \"la_probe\" when close[-" + std::to_string(K) +
-          "] > 0 then cancel because \"probe\"\n";
+    Src = Generated.Source;
+    Src += "rule \"la_probe\" when close[-" + KStr;
+    Src += "] > 0 then cancel because \"probe\"\n";
   } else if (Mode == 1) {
-    Src = "param bad_off = 0 range -" + std::to_string(K) +
-          "..5 step 1\n" + Generated.Source +
-          "rule \"la_probe\" when close[bad_off] > 0 "
-          "then cancel because \"probe\"\n";
+    Src = "param bad_off = 0 range -" + KStr + "..5 step 1\n";
+    Src += Generated.Source;
+    Src += "rule \"la_probe\" when close[bad_off] > 0 ";
+    Src += "then cancel because \"probe\"\n";
   } else {
-    Src = "param bad_off = -" + std::to_string(K) + "\n" +
-          Generated.Source +
-          "rule \"la_probe\" when close[bad_off] > 0 "
-          "then cancel because \"probe\"\n";
+    Src = "param bad_off = -" + KStr + "\n";
+    Src += Generated.Source;
+    Src += "rule \"la_probe\" when close[bad_off] > 0 ";
+    Src += "then cancel because \"probe\"\n";
   }
 
   const auto Res = check(Src);
