@@ -343,7 +343,7 @@ private:
       NextCh = Input[CurPos + 1];
     }
 
-    auto emitToken = [&](TokenKind Kind, std::size_t Len) {
+    auto EmitToken = [&](TokenKind Kind, std::size_t Len) {
       const std::string_view Lexeme = Input.substr(CurPos, Len);
       CurPos += Len;
       CurCol += Len;
@@ -352,65 +352,65 @@ private:
     };
 
     if (Ch == '=' && NextCh == '=') {
-      emitToken(TokenKind::EqEq, 2);
+      EmitToken(TokenKind::EqEq, 2);
       return;
     }
     if (Ch == '!' && NextCh == '=') {
-      emitToken(TokenKind::BangEq, 2);
+      EmitToken(TokenKind::BangEq, 2);
       return;
     }
     if (Ch == '<' && NextCh == '=') {
-      emitToken(TokenKind::LtEq, 2);
+      EmitToken(TokenKind::LtEq, 2);
       return;
     }
     if (Ch == '>' && NextCh == '=') {
-      emitToken(TokenKind::GtEq, 2);
+      EmitToken(TokenKind::GtEq, 2);
       return;
     }
     if (Ch == '.' && NextCh == '.') {
-      emitToken(TokenKind::DotDot, 2);
+      EmitToken(TokenKind::DotDot, 2);
       return;
     }
 
     switch (Ch) {
     case '+':
-      emitToken(TokenKind::Plus, 1);
+      EmitToken(TokenKind::Plus, 1);
       return;
     case '-':
-      emitToken(TokenKind::Minus, 1);
+      EmitToken(TokenKind::Minus, 1);
       return;
     case '*':
-      emitToken(TokenKind::Star, 1);
+      EmitToken(TokenKind::Star, 1);
       return;
     case '/':
-      emitToken(TokenKind::Slash, 1);
+      EmitToken(TokenKind::Slash, 1);
       return;
     case '<':
-      emitToken(TokenKind::Lt, 1);
+      EmitToken(TokenKind::Lt, 1);
       return;
     case '>':
-      emitToken(TokenKind::Gt, 1);
+      EmitToken(TokenKind::Gt, 1);
       return;
     case '=':
-      emitToken(TokenKind::Eq, 1);
+      EmitToken(TokenKind::Eq, 1);
       return;
     case '%':
-      emitToken(TokenKind::Percent, 1);
+      EmitToken(TokenKind::Percent, 1);
       return;
     case '(':
-      emitToken(TokenKind::LParen, 1);
+      EmitToken(TokenKind::LParen, 1);
       return;
     case ')':
-      emitToken(TokenKind::RParen, 1);
+      EmitToken(TokenKind::RParen, 1);
       return;
     case '[':
-      emitToken(TokenKind::LBracket, 1);
+      EmitToken(TokenKind::LBracket, 1);
       return;
     case ']':
-      emitToken(TokenKind::RBracket, 1);
+      EmitToken(TokenKind::RBracket, 1);
       return;
     case ',':
-      emitToken(TokenKind::Comma, 1);
+      EmitToken(TokenKind::Comma, 1);
       return;
     default:
       break;

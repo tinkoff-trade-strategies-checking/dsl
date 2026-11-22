@@ -535,7 +535,7 @@ private:
     std::size_t PartStartCol = CurCol;
     std::string LiteralBuf;
 
-    auto flushLiteral = [&](std::size_t EndCol) {
+    auto FlushLiteral = [&](std::size_t EndCol) {
       if (!LiteralBuf.empty()) {
         TemplatePart Part;
         Part.IsExpr = false;
@@ -563,7 +563,7 @@ private:
           CurCol += 2;
           continue;
         }
-        flushLiteral(CurCol);
+        FlushLiteral(CurCol);
         const std::size_t OpenBraceCol = CurCol;
         ++I;
         ++CurCol;
@@ -668,7 +668,7 @@ private:
       ++CurCol;
     }
 
-    flushLiteral(CurCol);
+    FlushLiteral(CurCol);
   }
 
   ExprPtr makeExpr(SourceRange Range, ExprNode Node) {
