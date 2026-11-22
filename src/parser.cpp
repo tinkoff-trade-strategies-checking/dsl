@@ -677,6 +677,7 @@ private:
     }
     auto Ptr = std::make_unique<Expr>();
     Ptr->Range = Range;
+    Ptr->TokenRange = Range;
     Ptr->Node = std::move(Node);
     return Ptr;
   }

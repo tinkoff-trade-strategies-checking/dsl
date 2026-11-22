@@ -369,6 +369,24 @@ TEST(CheckTest, Phase3LookaheadDetection) {
   EXPECT_EQ(countCode(WlaNested.Diagnostics, "W-LA01"), 0U);
   EXPECT_EQ(WlaNested.Lookahead, dsl::LookaheadLevel::Ok);
 
+  const auto WlaSmaOffset1 = dsl::check(
+      "rule \"r\" when sma(close, 20)[1] > 250 then cancel because \"x\"");
+  EXPECT_EQ(countCode(WlaSmaOffset1.Diagnostics, "W-LA01"), 1U);
+  EXPECT_EQ(WlaSmaOffset1.Lookahead, dsl::LookaheadLevel::Warning);
+
+  const auto WlaSmaOffset0 = dsl::check(
+      "rule \"r\" when sma(close, 20)[0] > 250 then cancel because \"x\"");
+  EXPECT_EQ(countCode(WlaSmaOffset0.Diagnostics, "W-LA01"), 1U);
+  EXPECT_EQ(WlaSmaOffset0.Lookahead, dsl::LookaheadLevel::Warning);
+
+  const std::string NestedOffsetSrc =
+      "param a = 10\nparam b = 20\nparam lvl = 250\n"
+      "rule \"r\" when ema(sma(close, a), b)[1] > lvl then cancel\n"
+      "  because \"x\"";
+  const auto WlaNestedOffset = dsl::check(NestedOffsetSrc);
+  EXPECT_EQ(countCode(WlaNestedOffset.Diagnostics, "W-LA01"), 0U);
+  EXPECT_EQ(WlaNestedOffset.Lookahead, dsl::LookaheadLevel::Ok);
+
   const std::string HugeNeg =
       "param p = -100000000000000000000\n"
       "rule \"r\" when sma(close[p], 10) > 0 then cancel because \"x\"";
@@ -485,6 +503,68 @@ TEST(CheckTest, RoundTripPrintParseAndDeterminism) {
          Prev.Range.End == Curr.Range.End && Prev.Code <= Curr.Code);
     EXPECT_TRUE(Ordered);
   }
+}
+
+TEST(CheckTest, L001ParenthesizedLiteralsPreserveOuterParens) {
+  const std::string Src = "rule \"r\"\n"
+                          "  when(5)>close and(2.5)>1\n"
+                          "  then buy(5)lots limit(100.5)gtc\n"
+                          "  because \"ok\"\n"
+                          "rule \"neg\"\n"
+                          "  when(-7)<close\n"
+                          "  then buy(-3)lots\n"
+                          "  because \"neg\"\n";
+  const auto Res = dsl::check(Src);
+  EXPECT_EQ(countCode(Res.Diagnostics, "E-SYN"), 0U);
+  EXPECT_EQ(countCode(Res.Diagnostics, "L001"), 6U);
+
+  const auto Edits = collectEdits(Res.Diagnostics, "L001");
+  ASSERT_FALSE(Edits.empty());
+  const std::string Fixed = dsl::applyEdits(Src, Edits);
+  EXPECT_NE(Fixed.find("when(p1)>close"), std::string::npos);
+  EXPECT_NE(Fixed.find("and(p2)>1"), std::string::npos);
+  EXPECT_NE(Fixed.find("buy(p3)lots"), std::string::npos);
+  EXPECT_NE(Fixed.find("limit(p4)gtc"), std::string::npos);
+  EXPECT_NE(Fixed.find("when(p5)<close"), std::string::npos);
+  EXPECT_NE(Fixed.find("buy(p6)lots"), std::string::npos);
+
+  const auto AfterFix = dsl::check(Fixed);
+  EXPECT_EQ(countCode(AfterFix.Diagnostics, "E-SYN"), 0U);
+  EXPECT_EQ(countCode(AfterFix.Diagnostics, "E-TYPE"), 0U);
+  EXPECT_EQ(countCode(AfterFix.Diagnostics, "L001"), 0U);
+}
+
+TEST(CheckTest, DagZeroOffsetCanonicalizationAt256Limit) {
+  std::string Src = "param p = 0\n";
+  for (std::size_t RuleIdx = 0; RuleIdx < 8U; ++RuleIdx) {
+    Src += "rule \"r" + std::to_string(RuleIdx) + "\" when ";
+    for (std::size_t Term = 0; Term < 32U; ++Term) {
+      const std::size_t Period = RuleIdx * 32U + Term + 1U;
+      if (Term > 0U) {
+        Src += " + ";
+      }
+      Src += "sma(close, " + std::to_string(Period) + ")";
+    }
+    Src += " > 0 then cancel because \"x\"\n";
+  }
+  Src += "rule \"dup_zero\" when sma(close[0], 10) > 0 and "
+         "sma(close[p], 10) > 0 and sma(close[-0], 10) > 0 "
+         "then cancel because \"x\"\n";
+
+  const auto CheckOk = dsl::check(Src);
+  EXPECT_EQ(countCode(CheckOk.Diagnostics, "E-SYN"), 0U);
+  EXPECT_EQ(countCode(CheckOk.Diagnostics, "E-TYPE"), 0U);
+
+  const auto Compiled = dsl::compile(Src, {}, 1);
+  ASSERT_TRUE(Compiled.Ok);
+  ASSERT_NE(Compiled.Instance, nullptr);
+  EXPECT_EQ(Compiled.Instance->dagNodeCount(), dsl::kMaxDagNodes);
+
+  const std::string ExtraRule = "rule \"extra\" when sma(close[1], 10) > 0\n"
+                                "  then cancel because \"x\"\n";
+  const std::string OverLimitSrc = Src + ExtraRule;
+  const auto CheckErr = dsl::check(OverLimitSrc);
+  EXPECT_EQ(countCode(CheckErr.Diagnostics, "E-SYN"), 1U);
 }
 
 } // namespace

@@ -828,6 +828,9 @@ private:
             if (Inner.Target) {
               TargetKey = canonicalExprKey(*Inner.Target);
             }
+            if (EffVal == 0.0) {
+              return TargetKey;
+            }
             return "O(" + TargetKey + "," + encodeDouble(EffVal) + ")";
           } else if constexpr (std::is_same_v<T, UnaryExpr>) {
             const char *OpKey = Inner.Op == UnaryOp::Neg ? "neg" : "not";
@@ -887,6 +890,12 @@ private:
     }
     if (Node == nullptr) {
       return false;
+    }
+    if (const auto *Off = std::get_if<OffsetExpr>(&Node->Node)) {
+      Node = Off->Target.get();
+      if (Node == nullptr) {
+        return false;
+      }
     }
     if (const auto *Call = std::get_if<CallExpr>(&Node->Node)) {
       return isDirectPriceIndicatorName(Call->Callee) &&

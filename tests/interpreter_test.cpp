@@ -563,4 +563,77 @@ rule "held"
   EXPECT_TRUE(AfterCancel.Intents.empty());
 }
 
+TEST(EngineTest, RecursiveIndicatorsDoNotPoisonStateOnOverflow) {
+  const std::string Src = R"dsl(
+rule "ema_p" when not is_na(ema(close, 2))
+  then cancel because "{ema(close, 2)}"
+rule "rsi_p" when not is_na(rsi(close, 2))
+  then cancel because "{rsi(close, 2)}"
+rule "atr_p" when not is_na(atr(2))
+  then cancel because "{atr(2)}"
+)dsl";
+  auto Compiled = dsl::compile(Src, {}, 1);
+  ASSERT_TRUE(Compiled.Ok);
+  ASSERT_NE(Compiled.Instance, nullptr);
+
+  dsl::PortfolioSnapshot Snap;
+  Snap.Cash = 1'000'000.0;
+  Snap.Equity = 1'000'000.0;
+
+  auto RunBar = [&](std::int64_t StepIdx, double High, double Low,
+                    double Close) {
+    dsl::Bar BarVal;
+    BarVal.Step = StepIdx;
+    BarVal.Open = Close;
+    BarVal.High = High;
+    BarVal.Low = Low;
+    BarVal.Close = Close;
+    BarVal.Volume = 100.0;
+    return dsl::step(*Compiled.Instance, 0, BarVal, Snap, false);
+  };
+  auto HasRule = [](const dsl::StepOutcome &StepRes, std::string_view Name) {
+    for (const auto &Intent : StepRes.Intents) {
+      if (Intent.RuleName == Name) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  // Warmup overflow for ema(2), rsi(2), atr(2) must not poison later bars.
+  const auto S0 = RunBar(0, 1e308, -1e308, 1e308);
+  EXPECT_FALSE(HasRule(S0, "ema_p"));
+  EXPECT_FALSE(HasRule(S0, "rsi_p"));
+  EXPECT_FALSE(HasRule(S0, "atr_p"));
+
+  const auto S1 = RunBar(1, 1e308, -1e308, 1e308);
+  EXPECT_FALSE(HasRule(S1, "ema_p"));
+  EXPECT_FALSE(HasRule(S1, "rsi_p"));
+  EXPECT_FALSE(HasRule(S1, "atr_p"));
+
+  // Feed normal finite bars; recursive indicators must recover cleanly.
+  const auto S2 = RunBar(2, 102.0, 98.0, 100.0);
+  const auto S3 = RunBar(3, 104.0, 100.0, 102.0);
+  const auto S4 = RunBar(4, 106.0, 102.0, 104.0);
+  EXPECT_FALSE(S2.Error.has_value());
+  EXPECT_FALSE(S3.Error.has_value());
+  EXPECT_FALSE(S4.Error.has_value());
+  EXPECT_TRUE(HasRule(S4, "ema_p"));
+  EXPECT_TRUE(HasRule(S4, "rsi_p"));
+  EXPECT_TRUE(HasRule(S4, "atr_p"));
+
+  // Post-warmup overflow spike (-1e308 -> +1e308 gives +Inf Delta and Tr)
+  // must return kNa on that bar and preserve state.
+  const auto SpikeBase = RunBar(5, 1e308, 0.0, -1e308);
+  EXPECT_FALSE(SpikeBase.Error.has_value());
+  const auto Spike = RunBar(6, 1e308, -1e308, 1e308);
+  EXPECT_FALSE(HasRule(Spike, "rsi_p"));
+  EXPECT_FALSE(HasRule(Spike, "atr_p"));
+
+  const auto AfterSpike = RunBar(7, 108.0, 104.0, 106.0);
+  EXPECT_FALSE(AfterSpike.Error.has_value());
+  EXPECT_TRUE(HasRule(AfterSpike, "rsi_p"));
+  EXPECT_TRUE(HasRule(AfterSpike, "atr_p"));
+}
+
 } // namespace

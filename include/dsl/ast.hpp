@@ -76,6 +76,8 @@ using ExprNode = std::variant<NumberLitExpr, BoolLitExpr, IdentExpr, OffsetExpr,
 /// AST node for any expression; `ResolvedType` is populated in Phase 2.
 struct Expr {
   SourceRange Range;
+  // Innermost expression span before wrapping parentheses (used by linter).
+  SourceRange TokenRange;
   ValueType ResolvedType = ValueType::Error;
   ExprNode Node;
 };
