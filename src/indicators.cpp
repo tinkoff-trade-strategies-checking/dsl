@@ -130,7 +130,16 @@ double computeRsi(double AvgGain, double AvgLoss) noexcept {
   if (AvgLoss == 0.0) {
     return 100.0;
   }
-  return 100.0 * AvgGain / (AvgGain + AvgLoss);
+  const double Sum = AvgGain + AvgLoss;
+  const double Numerator = 100.0 * AvgGain;
+  if (std::isfinite(Sum) && std::isfinite(Numerator)) {
+    return Numerator / Sum;
+  }
+  if (AvgGain >= AvgLoss) {
+    return 100.0 / (1.0 + AvgLoss / AvgGain);
+  }
+  const double Ratio = AvgGain / AvgLoss;
+  return 100.0 * Ratio / (1.0 + Ratio);
 }
 
 double updateWindowStat(const DagNodeSpec &Spec, DagNodeState &State,
@@ -172,14 +181,22 @@ double updateEma(std::size_t Period, DagNodeState &State, double InputA) {
     if (State.InputWindow.size() < Period) {
       return kNa;
     }
-    State.EmaPrev =
+    const double InitVal =
         State.InputWindow.sumOldestToNewest() / static_cast<double>(Period);
+    if (!std::isfinite(InitVal)) {
+      return kNa;
+    }
+    State.EmaPrev = InitVal;
     State.EmaInitialized = true;
     State.InputWindow.clear();
     return State.EmaPrev;
   }
   const double Alpha = 2.0 / (static_cast<double>(Period) + 1.0);
-  State.EmaPrev = Alpha * InputA + (1.0 - Alpha) * State.EmaPrev;
+  const double NextEma = Alpha * InputA + (1.0 - Alpha) * State.EmaPrev;
+  if (!std::isfinite(NextEma)) {
+    return kNa;
+  }
+  State.EmaPrev = NextEma;
   return State.EmaPrev;
 }
 
@@ -193,25 +210,51 @@ double updateRsi(std::size_t Period, DagNodeState &State, double InputA) {
     return kNa;
   }
   const double Delta = InputA - State.PrevInput;
-  State.PrevInput = InputA;
-  const double Gain = Delta > 0.0 ? Delta : 0.0;
-  const double Loss = Delta < 0.0 ? -Delta : 0.0;
-  ++State.RsiCount;
-  const auto PeriodD = static_cast<double>(Period);
-  if (State.RsiCount < Period) {
-    State.GainSum += Gain;
-    State.LossSum += Loss;
+  if (!std::isfinite(Delta)) {
     return kNa;
   }
-  if (State.RsiCount == Period) {
-    State.GainSum += Gain;
-    State.LossSum += Loss;
-    State.AvgGain = State.GainSum / PeriodD;
-    State.AvgLoss = State.LossSum / PeriodD;
+  const double Gain = Delta > 0.0 ? Delta : 0.0;
+  const double Loss = Delta < 0.0 ? -Delta : 0.0;
+  const std::size_t NextCount = State.RsiCount + 1;
+  const auto PeriodD = static_cast<double>(Period);
+  if (NextCount < Period) {
+    const double NextGainSum = State.GainSum + Gain;
+    const double NextLossSum = State.LossSum + Loss;
+    if (!std::isfinite(NextGainSum) || !std::isfinite(NextLossSum)) {
+      return kNa;
+    }
+    State.PrevInput = InputA;
+    State.RsiCount = NextCount;
+    State.GainSum = NextGainSum;
+    State.LossSum = NextLossSum;
+    return kNa;
+  }
+  if (NextCount == Period) {
+    const double NextGainSum = State.GainSum + Gain;
+    const double NextLossSum = State.LossSum + Loss;
+    const double NextAvgGain = NextGainSum / PeriodD;
+    const double NextAvgLoss = NextLossSum / PeriodD;
+    if (!std::isfinite(NextGainSum) || !std::isfinite(NextLossSum) ||
+        !std::isfinite(NextAvgGain) || !std::isfinite(NextAvgLoss)) {
+      return kNa;
+    }
+    State.PrevInput = InputA;
+    State.RsiCount = NextCount;
+    State.GainSum = NextGainSum;
+    State.LossSum = NextLossSum;
+    State.AvgGain = NextAvgGain;
+    State.AvgLoss = NextAvgLoss;
   } else {
     const auto PrevWeight = static_cast<double>(Period - 1);
-    State.AvgGain = (State.AvgGain * PrevWeight + Gain) / PeriodD;
-    State.AvgLoss = (State.AvgLoss * PrevWeight + Loss) / PeriodD;
+    const double NextAvgGain = (State.AvgGain * PrevWeight + Gain) / PeriodD;
+    const double NextAvgLoss = (State.AvgLoss * PrevWeight + Loss) / PeriodD;
+    if (!std::isfinite(NextAvgGain) || !std::isfinite(NextAvgLoss)) {
+      return kNa;
+    }
+    State.PrevInput = InputA;
+    State.RsiCount = NextCount;
+    State.AvgGain = NextAvgGain;
+    State.AvgLoss = NextAvgLoss;
   }
   return computeRsi(State.AvgGain, State.AvgLoss);
 }
@@ -231,20 +274,40 @@ double updateAtr(std::size_t Period, DagNodeState &State,
   if (!std::isfinite(Tr)) {
     return kNa;
   }
-  State.PrevClose = CurrentBar.Close;
-  State.HasPrevClose = true;
-  ++State.AtrCount;
+  const std::size_t NextCount = State.AtrCount + 1;
   const auto PeriodD = static_cast<double>(Period);
-  if (State.AtrCount < Period) {
-    State.TrSum += Tr;
+  if (NextCount < Period) {
+    const double NextTrSum = State.TrSum + Tr;
+    if (!std::isfinite(NextTrSum)) {
+      return kNa;
+    }
+    State.PrevClose = CurrentBar.Close;
+    State.HasPrevClose = true;
+    State.AtrCount = NextCount;
+    State.TrSum = NextTrSum;
     return kNa;
   }
-  if (State.AtrCount == Period) {
-    State.TrSum += Tr;
-    State.AvgTr = State.TrSum / PeriodD;
+  if (NextCount == Period) {
+    const double NextTrSum = State.TrSum + Tr;
+    const double NextAvgTr = NextTrSum / PeriodD;
+    if (!std::isfinite(NextTrSum) || !std::isfinite(NextAvgTr)) {
+      return kNa;
+    }
+    State.PrevClose = CurrentBar.Close;
+    State.HasPrevClose = true;
+    State.AtrCount = NextCount;
+    State.TrSum = NextTrSum;
+    State.AvgTr = NextAvgTr;
   } else {
     const auto PrevWeight = static_cast<double>(Period - 1);
-    State.AvgTr = (State.AvgTr * PrevWeight + Tr) / PeriodD;
+    const double NextAvgTr = (State.AvgTr * PrevWeight + Tr) / PeriodD;
+    if (!std::isfinite(NextAvgTr)) {
+      return kNa;
+    }
+    State.PrevClose = CurrentBar.Close;
+    State.HasPrevClose = true;
+    State.AtrCount = NextCount;
+    State.AvgTr = NextAvgTr;
   }
   return State.AvgTr;
 }

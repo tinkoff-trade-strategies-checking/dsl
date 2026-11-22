@@ -313,7 +313,7 @@ private:
 
     if (const auto *Lit = std::get_if<NumberLitExpr>(&Node->Node)) {
       if (!isExcludedNumericValue(Lit->Value)) {
-        emitMagicNumber(Node->Range, Lit->RawText, ContextBaseName);
+        emitMagicNumber(Node->TokenRange, Lit->RawText, ContextBaseName);
       }
       return;
     }
@@ -345,7 +345,8 @@ private:
                 std::get_if<NumberLitExpr>(&Unary->Operand->Node)) {
           const double SignedVal = -Lit->Value;
           if (!isExcludedNumericValue(SignedVal)) {
-            emitMagicNumber(Node->Range, "-" + Lit->RawText, ContextBaseName);
+            emitMagicNumber(Node->TokenRange, "-" + Lit->RawText,
+                            ContextBaseName);
           }
           return;
         }
