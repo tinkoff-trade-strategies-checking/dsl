@@ -104,6 +104,9 @@ std::optional<DagNodeKind> dagNodeKind(std::string_view Name) noexcept {
   if (Name == "ema") {
     return DagNodeKind::Ema;
   }
+  if (Name == "wma") {
+    return DagNodeKind::Wma;
+  }
   if (Name == "rsi") {
     return DagNodeKind::Rsi;
   }
@@ -127,6 +130,69 @@ std::optional<DagNodeKind> dagNodeKind(std::string_view Name) noexcept {
   }
   if (Name == "crossunder") {
     return DagNodeKind::Crossunder;
+  }
+  if (Name == "bb_mid") {
+    return DagNodeKind::BbMid;
+  }
+  if (Name == "bb_upper") {
+    return DagNodeKind::BbUpper;
+  }
+  if (Name == "bb_lower") {
+    return DagNodeKind::BbLower;
+  }
+  if (Name == "vwap") {
+    return DagNodeKind::Vwap;
+  }
+  if (Name == "macd") {
+    return DagNodeKind::Macd;
+  }
+  if (Name == "macd_signal") {
+    return DagNodeKind::MacdSignal;
+  }
+  if (Name == "macd_hist") {
+    return DagNodeKind::MacdHist;
+  }
+  if (Name == "stoch_k") {
+    return DagNodeKind::StochK;
+  }
+  if (Name == "stoch_d") {
+    return DagNodeKind::StochD;
+  }
+  if (Name == "stoch_rsi") {
+    return DagNodeKind::StochRsi;
+  }
+  if (Name == "adx") {
+    return DagNodeKind::Adx;
+  }
+  if (Name == "plus_di") {
+    return DagNodeKind::PlusDi;
+  }
+  if (Name == "minus_di") {
+    return DagNodeKind::MinusDi;
+  }
+  if (Name == "cci") {
+    return DagNodeKind::Cci;
+  }
+  if (Name == "willr") {
+    return DagNodeKind::WillR;
+  }
+  if (Name == "roc") {
+    return DagNodeKind::Roc;
+  }
+  if (Name == "ult_osc") {
+    return DagNodeKind::UltOsc;
+  }
+  if (Name == "bull_power") {
+    return DagNodeKind::BullPower;
+  }
+  if (Name == "bear_power") {
+    return DagNodeKind::BearPower;
+  }
+  if (Name == "obv") {
+    return DagNodeKind::Obv;
+  }
+  if (Name == "mfi") {
+    return DagNodeKind::Mfi;
   }
   return std::nullopt;
 }
@@ -401,16 +467,70 @@ private:
       std::size_t ExprIdA = kInvalidExprId;
       std::size_t ExprIdB = kInvalidExprId;
 
-      if (*Kind == DagNodeKind::Atr) {
+      switch (*Kind) {
+      case DagNodeKind::Obv:
+        Spec.Period = 0;
+        break;
+      case DagNodeKind::Atr:
+      case DagNodeKind::Vwap:
+      case DagNodeKind::StochK:
+      case DagNodeKind::StochRsi:
+      case DagNodeKind::Adx:
+      case DagNodeKind::PlusDi:
+      case DagNodeKind::MinusDi:
+      case DagNodeKind::Cci:
+      case DagNodeKind::WillR:
+      case DagNodeKind::BullPower:
+      case DagNodeKind::BearPower:
+      case DagNodeKind::Mfi:
         Spec.Period = resolvePeriod(*Call->Args[0]);
-      } else if (*Kind == DagNodeKind::Crossover ||
-                 *Kind == DagNodeKind::Crossunder) {
+        break;
+      case DagNodeKind::StochD:
+        Spec.Period = resolvePeriod(*Call->Args[0]);
+        Spec.Period2 = resolvePeriod(*Call->Args[1]);
+        break;
+      case DagNodeKind::UltOsc:
+        Spec.Period = resolvePeriod(*Call->Args[0]);
+        Spec.Period2 = resolvePeriod(*Call->Args[1]);
+        Spec.Period3 = resolvePeriod(*Call->Args[2]);
+        break;
+      case DagNodeKind::BbUpper:
+      case DagNodeKind::BbLower:
+        Spec.InputA = buildDagInput(*Call->Args[0], ExprIdA);
+        Spec.Period = resolvePeriod(*Call->Args[1]);
+        Spec.InputB = buildDagInput(*Call->Args[2], ExprIdB);
+        break;
+      case DagNodeKind::Macd:
+        Spec.InputA = buildDagInput(*Call->Args[0], ExprIdA);
+        Spec.Period = resolvePeriod(*Call->Args[1]);
+        Spec.Period2 = resolvePeriod(*Call->Args[2]);
+        break;
+      case DagNodeKind::MacdSignal:
+      case DagNodeKind::MacdHist:
+        Spec.InputA = buildDagInput(*Call->Args[0], ExprIdA);
+        Spec.Period = resolvePeriod(*Call->Args[1]);
+        Spec.Period2 = resolvePeriod(*Call->Args[2]);
+        Spec.Period3 = resolvePeriod(*Call->Args[3]);
+        break;
+      case DagNodeKind::Crossover:
+      case DagNodeKind::Crossunder:
         Spec.Period = 0;
         Spec.InputA = buildDagInput(*Call->Args[0], ExprIdA);
         Spec.InputB = buildDagInput(*Call->Args[1], ExprIdB);
-      } else {
+        break;
+      case DagNodeKind::Sma:
+      case DagNodeKind::Ema:
+      case DagNodeKind::Wma:
+      case DagNodeKind::Rsi:
+      case DagNodeKind::Stdev:
+      case DagNodeKind::Highest:
+      case DagNodeKind::Lowest:
+      case DagNodeKind::Change:
+      case DagNodeKind::BbMid:
+      case DagNodeKind::Roc:
         Spec.Period = resolvePeriod(*Call->Args[1]);
         Spec.InputA = buildDagInput(*Call->Args[0], ExprIdA);
+        break;
       }
 
       KeyToDagIdx.emplace(Key, NodeIdx);
