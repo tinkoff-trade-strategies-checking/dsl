@@ -24,10 +24,14 @@ namespace {
 
 struct BuiltinFuncSpec {
   std::size_t Arity = 0;
-  std::optional<std::size_t> PeriodArgIndex;
+  std::uint8_t PeriodArgMask = 0;
   ValueType ReturnType = ValueType::Number;
   bool IsDagNode = false;
   bool AllowsOffset = false;
+
+  bool isPeriodArg(std::size_t Index) const noexcept {
+    return Index < 8U && ((PeriodArgMask & (1U << Index)) != 0U);
+  }
 };
 
 bool isPriceSeries(std::string_view Name) noexcept {
@@ -44,31 +48,58 @@ bool isPortfolioVar(std::string_view Name) noexcept {
 }
 
 std::optional<BuiltinFuncSpec> getBuiltinFuncSpec(std::string_view Name) {
-  if (Name == "atr") {
-    return BuiltinFuncSpec{1, 0, ValueType::Number, true, true};
+  if (Name == "obv") {
+    return BuiltinFuncSpec{0, 0U, ValueType::Number, true, true};
   }
-  if (Name == "sma" || Name == "ema" || Name == "rsi" || Name == "stdev" ||
-      Name == "highest" || Name == "lowest" || Name == "change") {
-    return BuiltinFuncSpec{2, 1, ValueType::Number, true, true};
+  if (Name == "atr" || Name == "vwap" || Name == "stoch_k" ||
+      Name == "stoch_rsi" || Name == "adx" || Name == "plus_di" ||
+      Name == "minus_di" || Name == "cci" || Name == "willr" ||
+      Name == "bull_power" || Name == "bear_power" || Name == "mfi") {
+    return BuiltinFuncSpec{1, 1U << 0U, ValueType::Number, true, true};
+  }
+  if (Name == "sma" || Name == "ema" || Name == "wma" || Name == "rsi" ||
+      Name == "stdev" || Name == "highest" || Name == "lowest" ||
+      Name == "change" || Name == "bb_mid" || Name == "roc") {
+    return BuiltinFuncSpec{2, 1U << 1U, ValueType::Number, true, true};
+  }
+  if (Name == "stoch_d") {
+    return BuiltinFuncSpec{2, (1U << 0U) | (1U << 1U), ValueType::Number, true,
+                           true};
+  }
+  if (Name == "bb_upper" || Name == "bb_lower") {
+    return BuiltinFuncSpec{3, 1U << 1U, ValueType::Number, true, true};
+  }
+  if (Name == "macd") {
+    return BuiltinFuncSpec{3, (1U << 1U) | (1U << 2U), ValueType::Number, true,
+                           true};
+  }
+  if (Name == "ult_osc") {
+    return BuiltinFuncSpec{3, (1U << 0U) | (1U << 1U) | (1U << 2U),
+                           ValueType::Number, true, true};
+  }
+  if (Name == "macd_signal" || Name == "macd_hist") {
+    return BuiltinFuncSpec{4, (1U << 1U) | (1U << 2U) | (1U << 3U),
+                           ValueType::Number, true, true};
   }
   if (Name == "crossover" || Name == "crossunder") {
-    return BuiltinFuncSpec{2, std::nullopt, ValueType::Bool, true, false};
+    return BuiltinFuncSpec{2, 0U, ValueType::Bool, true, false};
   }
   if (Name == "min" || Name == "max") {
-    return BuiltinFuncSpec{2, std::nullopt, ValueType::Number, false, false};
+    return BuiltinFuncSpec{2, 0U, ValueType::Number, false, false};
   }
   if (Name == "abs" || Name == "sqrt") {
-    return BuiltinFuncSpec{1, std::nullopt, ValueType::Number, false, false};
+    return BuiltinFuncSpec{1, 0U, ValueType::Number, false, false};
   }
   if (Name == "is_na") {
-    return BuiltinFuncSpec{1, std::nullopt, ValueType::Bool, false, false};
+    return BuiltinFuncSpec{1, 0U, ValueType::Bool, false, false};
   }
   return std::nullopt;
 }
 
 bool isDirectPriceIndicatorName(std::string_view Name) noexcept {
-  return Name == "sma" || Name == "ema" || Name == "highest" ||
-         Name == "lowest";
+  return Name == "sma" || Name == "ema" || Name == "wma" || Name == "highest" ||
+         Name == "lowest" || Name == "bb_mid" || Name == "bb_upper" ||
+         Name == "bb_lower";
 }
 
 bool isSpaceChar(std::string_view Text, std::size_t Pos,
@@ -324,12 +355,17 @@ private:
     }
     if (const auto *Call = std::get_if<CallExpr>(&Node->Node)) {
       const auto Spec = getBuiltinFuncSpec(Call->Callee);
-      if (Spec.has_value() && Spec->PeriodArgIndex.has_value() &&
+      if (Spec.has_value() && Spec->PeriodArgMask != 0U &&
           Call->Args.size() == Spec->Arity) {
-        const Expr *PeriodArg = Call->Args[*Spec->PeriodArgIndex].get();
-        if (PeriodArg != nullptr) {
-          if (const auto *Id = std::get_if<IdentExpr>(&PeriodArg->Node)) {
-            setParamInteger(Id->Name);
+        for (std::size_t I = 0; I < Call->Args.size(); ++I) {
+          if (!Spec->isPeriodArg(I)) {
+            continue;
+          }
+          const Expr *PeriodArg = Call->Args[I].get();
+          if (PeriodArg != nullptr) {
+            if (const auto *Id = std::get_if<IdentExpr>(&PeriodArg->Node)) {
+              setParamInteger(Id->Name);
+            }
           }
         }
       }
@@ -749,7 +785,7 @@ private:
         AllValid = false;
         continue;
       }
-      if (Spec->PeriodArgIndex.has_value() && I == *Spec->PeriodArgIndex) {
+      if (Spec->isPeriodArg(I)) {
         if (!checkPeriodArg(*Call.Args[I])) {
           AllValid = false;
         }
@@ -898,8 +934,11 @@ private:
       }
     }
     if (const auto *Call = std::get_if<CallExpr>(&Node->Node)) {
+      if (Call->Callee == "vwap" && Call->Args.size() == 1) {
+        return true;
+      }
       return isDirectPriceIndicatorName(Call->Callee) &&
-             Call->Args.size() == 2 && isPriceSeriesExpr(Call->Args[0].get());
+             Call->Args.size() >= 2 && isPriceSeriesExpr(Call->Args[0].get());
     }
     return false;
   }

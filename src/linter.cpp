@@ -31,7 +31,11 @@ struct AnchorPoint {
 
 struct BuiltinFuncInfo {
   std::size_t Arity = 0;
-  std::optional<std::size_t> PeriodArgIndex;
+  std::uint8_t PeriodArgMask = 0;
+
+  bool isPeriodArg(std::size_t Index) const noexcept {
+    return Index < 8U && ((PeriodArgMask & (1U << Index)) != 0U);
+  }
 };
 
 std::vector<LineInfo> buildLineIndex(std::string_view Source) {
@@ -162,19 +166,41 @@ bool isKeyword(std::string_view Name) noexcept {
 }
 
 std::optional<BuiltinFuncInfo> getBuiltinFuncInfo(std::string_view Name) {
-  if (Name == "atr") {
-    return BuiltinFuncInfo{1, 0};
+  if (Name == "obv") {
+    return BuiltinFuncInfo{0, 0U};
   }
-  if (Name == "sma" || Name == "ema" || Name == "rsi" || Name == "stdev" ||
-      Name == "highest" || Name == "lowest" || Name == "change") {
-    return BuiltinFuncInfo{2, 1};
+  if (Name == "atr" || Name == "vwap" || Name == "stoch_k" ||
+      Name == "stoch_rsi" || Name == "adx" || Name == "plus_di" ||
+      Name == "minus_di" || Name == "cci" || Name == "willr" ||
+      Name == "bull_power" || Name == "bear_power" || Name == "mfi") {
+    return BuiltinFuncInfo{1, 1U << 0U};
+  }
+  if (Name == "sma" || Name == "ema" || Name == "wma" || Name == "rsi" ||
+      Name == "stdev" || Name == "highest" || Name == "lowest" ||
+      Name == "change" || Name == "bb_mid" || Name == "roc") {
+    return BuiltinFuncInfo{2, 1U << 1U};
+  }
+  if (Name == "stoch_d") {
+    return BuiltinFuncInfo{2, (1U << 0U) | (1U << 1U)};
+  }
+  if (Name == "bb_upper" || Name == "bb_lower") {
+    return BuiltinFuncInfo{3, 1U << 1U};
+  }
+  if (Name == "macd") {
+    return BuiltinFuncInfo{3, (1U << 1U) | (1U << 2U)};
+  }
+  if (Name == "ult_osc") {
+    return BuiltinFuncInfo{3, (1U << 0U) | (1U << 1U) | (1U << 2U)};
+  }
+  if (Name == "macd_signal" || Name == "macd_hist") {
+    return BuiltinFuncInfo{4, (1U << 1U) | (1U << 2U) | (1U << 3U)};
   }
   if (Name == "crossover" || Name == "crossunder" || Name == "min" ||
       Name == "max") {
-    return BuiltinFuncInfo{2, std::nullopt};
+    return BuiltinFuncInfo{2, 0U};
   }
   if (Name == "abs" || Name == "sqrt" || Name == "is_na") {
-    return BuiltinFuncInfo{1, std::nullopt};
+    return BuiltinFuncInfo{1, 0U};
   }
   return std::nullopt;
 }
@@ -399,8 +425,7 @@ private:
         }
         for (std::size_t I = 0; I < Call->Args.size(); ++I) {
           std::optional<std::string> ArgBase;
-          if (Info->PeriodArgIndex.has_value() && I == *Info->PeriodArgIndex &&
-              Call->Args[I] != nullptr &&
+          if (Info->isPeriodArg(I) && Call->Args[I] != nullptr &&
               std::holds_alternative<NumberLitExpr>(Call->Args[I]->Node)) {
             ArgBase = Call->Callee + "_n";
           }

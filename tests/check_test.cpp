@@ -567,4 +567,103 @@ TEST(CheckTest, DagZeroOffsetCanonicalizationAt256Limit) {
   EXPECT_EQ(countCode(CheckErr.Diagnostics, "E-SYN"), 1U);
 }
 
+TEST(CheckTest, TaIndicatorsStaticCheckAndLinter) {
+  const std::string AllTaSrc = R"dsl(
+param p_n = 5 range 2..20 step 1
+param p_d = 3 range 2..10 step 1
+param p_fast = 3 range 2..10 step 1
+param p_slow = 6 range 3..20 step 1
+param p_sig = 3 range 2..10 step 1
+param p_k = 2.0 range 1.0..3.0 step 0.5
+param p_s1 = 2 range 1..10 step 1
+param p_s2 = 4 range 2..20 step 1
+param p_s3 = 6 range 3..30 step 1
+
+rule "ta_all"
+  when wma(close, p_n)[1] > 0
+       and bb_upper(close, p_n, p_k)[1] >= bb_mid(close, p_n)[1]
+       and bb_mid(close, p_n) >= bb_lower(close, p_n, p_k)
+       and vwap(p_n)[1] > 0
+       and macd(close, p_fast, p_slow)[1] == macd(close, p_fast, p_slow)[1]
+       and macd_signal(close, p_fast, p_slow, p_sig)[1] ==
+           macd_signal(close, p_fast, p_slow, p_sig)[1]
+       and macd_hist(close, p_fast, p_slow, p_sig)[1] ==
+           macd_hist(close, p_fast, p_slow, p_sig)[1]
+       and stoch_k(p_n)[1] >= 0 and stoch_d(p_n, p_d)[1] >= 0
+       and stoch_rsi(p_n)[1] >= 0
+       and adx(p_n)[1] >= 0 and plus_di(p_n)[1] >= 0 and minus_di(p_n)[1] >= 0
+       and cci(p_n)[1] == cci(p_n)[1]
+       and willr(p_n)[1] <= 0
+       and roc(close, p_n)[1] == roc(close, p_n)[1]
+       and ult_osc(p_s1, p_s2, p_s3)[1] >= 0
+       and bull_power(p_n)[1] == bull_power(p_n)[1]
+       and bear_power(p_n)[1] == bear_power(p_n)[1]
+       and obv()[1] == obv()[1]
+       and mfi(p_n)[1] >= 0
+  then buy 1 lots
+  because "ok"
+)dsl";
+  const auto Res = dsl::check(AllTaSrc);
+  EXPECT_EQ(countCode(Res.Diagnostics, "E-SYN"), 0U);
+  EXPECT_EQ(countCode(Res.Diagnostics, "E-TYPE"), 0U);
+  EXPECT_EQ(countCode(Res.Diagnostics, "E-LA01"), 0U);
+  EXPECT_EQ(countCode(Res.Diagnostics, "E-LA02"), 0U);
+  ASSERT_EQ(Res.Params.size(), 9U);
+  EXPECT_TRUE(Res.Params[0].IsInteger);
+  EXPECT_TRUE(Res.Params[1].IsInteger);
+  EXPECT_TRUE(Res.Params[2].IsInteger);
+  EXPECT_TRUE(Res.Params[3].IsInteger);
+  EXPECT_TRUE(Res.Params[4].IsInteger);
+  EXPECT_FALSE(Res.Params[5].IsInteger);
+  EXPECT_TRUE(Res.Params[6].IsInteger);
+  EXPECT_TRUE(Res.Params[7].IsInteger);
+  EXPECT_TRUE(Res.Params[8].IsInteger);
+
+  const char *const BadCalls[] = {
+      "rule \"r\" when obv(1) > 0 then cancel because \"x\"",
+      "rule \"r\" when bb_upper(close, 20) > 0 then cancel because \"x\"",
+      "rule \"r\" when macd(close, 12) > 0 then cancel because \"x\"",
+      "rule \"r\" when macd_signal(close, 12, 26) > 0 "
+      "then cancel because \"x\"",
+      "rule \"r\" when stoch_d(14) > 0 then cancel because \"x\"",
+      "rule \"r\" when ult_osc(7, 14) > 0 then cancel because \"x\"",
+      "rule \"r\" when wma(equity, 5) > 0 then cancel because \"x\"",
+      "rule \"r\" when bb_upper(close, 5, position) > 0 "
+      "then cancel because \"x\"",
+      "rule \"r\" when macd(cash, 3, 6) > 0 then cancel because \"x\"",
+      "rule \"r\" when param_bad(close) > 0 then cancel because \"x\"",
+  };
+  for (const char *Case : BadCalls) {
+    EXPECT_TRUE(hasCode(dsl::check(Case).Diagnostics, "E-TYPE")) << Case;
+  }
+
+  EXPECT_EQ(countCode(dsl::check("rule \"r\" when wma(close, 20) > 250 "
+                                 "then cancel because \"x\"")
+                          .Diagnostics,
+                      "W-LA01"),
+            1U);
+  EXPECT_EQ(countCode(dsl::check("rule \"r\" when bb_upper(close, 20, 2) > 250 "
+                                 "then cancel because \"x\"")
+                          .Diagnostics,
+                      "W-LA01"),
+            1U);
+  EXPECT_EQ(countCode(dsl::check("rule \"r\" when vwap(20) > 250 "
+                                 "then cancel because \"x\"")
+                          .Diagnostics,
+                      "W-LA01"),
+            1U);
+
+  const std::string LinterTaSrc =
+      "rule \"r\" when macd(close, 12, 26) > 0 and adx(14) > 25 "
+      "then cancel because \"x\"\n";
+  const auto LintRes = dsl::check(LinterTaSrc);
+  EXPECT_EQ(countCode(LintRes.Diagnostics, "L001"), 4U);
+  const std::string Fixed =
+      dsl::applyEdits(LinterTaSrc, collectEdits(LintRes.Diagnostics, "L001"));
+  const auto AfterFix = dsl::check(Fixed);
+  EXPECT_EQ(countCode(AfterFix.Diagnostics, "E-SYN"), 0U);
+  EXPECT_EQ(countCode(AfterFix.Diagnostics, "E-TYPE"), 0U);
+  EXPECT_EQ(countCode(AfterFix.Diagnostics, "L001"), 0U);
+}
+
 } // namespace
