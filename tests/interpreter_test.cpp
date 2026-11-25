@@ -950,11 +950,11 @@ TEST(IndicatorsTest, ChartSuperTrendKeltnerAndLinreg) {
   //   basicL=10.1875 (prevC=10<11.75 -> finalL=10.1875), C=17 > 14.625 -> flips
   //   to up, ST=10.1875
   const std::vector<dsl::Bar> Bars = {
-      makeBar(0, 11.0, 10.5, 12.0, 10.0),
-      makeBar(1, 13.0, 12.5, 14.0, 12.0),
-      makeBar(2, 14.0, 13.5, 15.0, 13.0),
-      makeBar(3, 10.0, 13.0, 13.0, 9.0),
-      makeBar(4, 17.0, 14.5, 18.0, 14.0),
+      makeBar(0, 11.0, 10.5, 12.0, 10.0, 100.0),
+      makeBar(1, 13.0, 12.5, 14.0, 12.0, 100.0),
+      makeBar(2, 14.0, 13.5, 15.0, 13.0, 100.0),
+      makeBar(3, 10.0, 13.0, 13.0, 9.0, 100.0),
+      makeBar(4, 17.0, 14.5, 18.0, 14.0, 100.0),
   };
   const auto StOut = probeSignedExpr("supertrend(2, 1.0)", Bars);
   const auto KuOut = probeSignedExpr("keltner_upper(2, 2.0)", Bars);
@@ -1059,15 +1059,15 @@ TEST(IndicatorsTest, ChartSwingsMonotonicAndBarsSince) {
   // swing_low(2,2): trough 6 at idx 5 confirmed at idx 7!
   //   bar 0..6: na; bar 7..8: 6
   const std::vector<dsl::Bar> SwingBars = {
-      makeBar(0, 9.0, 9.0, 10.0, 8.0),
-      makeBar(1, 10.0, 10.0, 12.0, 9.0),
-      makeBar(2, 13.0, 12.0, 15.0, 11.0),
-      makeBar(3, 11.0, 12.0, 13.0, 9.0),
-      makeBar(4, 9.0, 10.0, 11.0, 7.0),
-      makeBar(5, 8.0, 9.0, 10.0, 6.0),
-      makeBar(6, 12.0, 10.0, 14.0, 9.0),
-      makeBar(7, 11.0, 11.0, 12.0, 10.0),
-      makeBar(8, 10.0, 10.0, 11.0, 9.0),
+      makeBar(0, 9.0, 9.0, 10.0, 8.0, 100.0),
+      makeBar(1, 10.0, 10.0, 12.0, 9.0, 100.0),
+      makeBar(2, 13.0, 12.0, 15.0, 11.0, 100.0),
+      makeBar(3, 11.0, 12.0, 13.0, 9.0, 100.0),
+      makeBar(4, 9.0, 10.0, 11.0, 7.0, 100.0),
+      makeBar(5, 8.0, 9.0, 10.0, 6.0, 100.0),
+      makeBar(6, 12.0, 10.0, 14.0, 9.0, 100.0),
+      makeBar(7, 11.0, 11.0, 12.0, 10.0, 100.0),
+      makeBar(8, 10.0, 10.0, 11.0, 9.0, 100.0),
   };
   const auto ShOut = probeSignedExpr("swing_high(2, 2)", SwingBars);
   const auto SlOut = probeSignedExpr("swing_low(2, 2)", SwingBars);
@@ -1109,11 +1109,11 @@ TEST(IndicatorsTest, ChartSwingsMonotonicAndBarsSince) {
   // bar 3: C=10, O=10 (false) -> 2
   // bar 4: C=12, O=11 (true) -> 0
   const std::vector<dsl::Bar> BsBars = {
-      makeBar(0, 9.0, 10.0, 10.0, 9.0),
-      makeBar(1, 11.0, 10.0, 11.0, 10.0),
-      makeBar(2, 10.0, 11.0, 11.0, 10.0),
-      makeBar(3, 10.0, 10.0, 10.0, 10.0),
-      makeBar(4, 12.0, 11.0, 12.0, 11.0),
+      makeBar(0, 9.0, 10.0, 10.0, 9.0, 100.0),
+      makeBar(1, 11.0, 10.0, 11.0, 10.0, 100.0),
+      makeBar(2, 10.0, 11.0, 11.0, 10.0, 100.0),
+      makeBar(3, 10.0, 10.0, 10.0, 10.0, 100.0),
+      makeBar(4, 12.0, 11.0, 12.0, 11.0, 100.0),
   };
   const auto BsOut = probeSignedExpr("bars_since(close > open)", BsBars);
   const auto BsLag = probeSignedExpr("bars_since(close > open)[1]", BsBars);

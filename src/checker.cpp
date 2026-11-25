@@ -86,23 +86,23 @@ std::optional<BuiltinFuncSpec> getBuiltinFuncSpec(std::string_view Name) {
     return BuiltinFuncSpec{2, 1U << 0U, 0U, ValueType::Number, true, true};
   }
   if (Name == "stoch_d" || Name == "swing_high" || Name == "swing_low") {
-    return BuiltinFuncSpec{2, (1U << 0U) | (1U << 1U), 0U, ValueType::Number,
-                           true, true};
+    const std::uint8_t Mask = (1U << 0U) | (1U << 1U);
+    return BuiltinFuncSpec{2, Mask, 0U, ValueType::Number, true, true};
   }
   if (Name == "bb_upper" || Name == "bb_lower") {
     return BuiltinFuncSpec{3, 1U << 1U, 0U, ValueType::Number, true, true};
   }
   if (Name == "macd") {
-    return BuiltinFuncSpec{3, (1U << 1U) | (1U << 2U), 0U, ValueType::Number,
-                           true, true};
+    const std::uint8_t Mask = (1U << 1U) | (1U << 2U);
+    return BuiltinFuncSpec{3, Mask, 0U, ValueType::Number, true, true};
   }
   if (Name == "ult_osc") {
-    return BuiltinFuncSpec{3, (1U << 0U) | (1U << 1U) | (1U << 2U), 0U,
-                           ValueType::Number, true, true};
+    const std::uint8_t Mask = (1U << 0U) | (1U << 1U) | (1U << 2U);
+    return BuiltinFuncSpec{3, Mask, 0U, ValueType::Number, true, true};
   }
   if (Name == "macd_signal" || Name == "macd_hist") {
-    return BuiltinFuncSpec{4, (1U << 1U) | (1U << 2U) | (1U << 3U), 0U,
-                           ValueType::Number, true, true};
+    const std::uint8_t Mask = (1U << 1U) | (1U << 2U) | (1U << 3U);
+    return BuiltinFuncSpec{4, Mask, 0U, ValueType::Number, true, true};
   }
   if (Name == "crossover" || Name == "crossunder") {
     return BuiltinFuncSpec{2, 0U, 0U, ValueType::Bool, true, false};
