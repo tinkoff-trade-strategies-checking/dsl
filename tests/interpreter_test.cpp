@@ -885,4 +885,283 @@ rule "det"
   EXPECT_TRUE(SawFired);
 }
 
+std::vector<bool> probeBoolExpr(const std::string &ExprText,
+                                const std::vector<dsl::Bar> &Bars) {
+  const std::string Src =
+      "rule \"probe\" when " + ExprText + " then cancel because \"ok\"\n";
+  auto Compiled = dsl::compile(Src, {}, 1);
+  EXPECT_TRUE(Compiled.Ok);
+  std::vector<bool> Out;
+  if (!Compiled.Ok) {
+    return Out;
+  }
+  dsl::PortfolioSnapshot Port;
+  for (const auto &BarItem : Bars) {
+    const auto StepRes = dsl::step(*Compiled.Instance, 0, BarItem, Port, false);
+    EXPECT_FALSE(StepRes.Error.has_value());
+    Out.push_back(!StepRes.Intents.empty());
+  }
+  return Out;
+}
+
+TEST(IndicatorsTest, ChartPivotPointsZeroLookahead) {
+  // Prior 2-bar window:
+  // bar 0: H=12, L=8, C=10 -> na
+  // bar 1: H=15, L=9, C=11 -> na (only 1 prior bar)
+  // bar 2: prior {0, 1} => H=15, L=8, C=11 => P=(15+8+11)/3 = 34/3
+  //   R1 = 2*P - 8 = 44/3, R2 = P + 7 = 55/3
+  //   S1 = 2*P - 15 = 23/3, S2 = P - 7 = 13/3
+  // bar 3: prior {1, 2} => H=20, L=9, C=18 => P=(20+9+18)/3 = 47/3
+  const std::vector<dsl::Bar> Bars = {
+      makeBar(0, 10.0, 9.0, 12.0, 8.0),
+      makeBar(1, 11.0, 10.0, 15.0, 9.0),
+      makeBar(2, 18.0, 12.0, 20.0, 12.0),
+      makeBar(3, 14.0, 18.0, 19.0, 13.0),
+  };
+  const auto POut = probeSignedExpr("pivot(2)", Bars);
+  const auto R1Out = probeSignedExpr("pivot_r1(2)", Bars);
+  const auto R2Out = probeSignedExpr("pivot_r2(2)", Bars);
+  const auto S1Out = probeSignedExpr("pivot_s1(2)", Bars);
+  const auto S2Out = probeSignedExpr("pivot_s2(2)", Bars);
+  ASSERT_EQ(POut.size(), 4U);
+  EXPECT_TRUE(dsl::isNaValue(POut[0]));
+  EXPECT_TRUE(dsl::isNaValue(POut[1]));
+  EXPECT_NEAR(POut[2], 34.0 / 3.0, 1e-9);
+  EXPECT_NEAR(R1Out[2], 44.0 / 3.0, 1e-9);
+  EXPECT_NEAR(R2Out[2], 55.0 / 3.0, 1e-9);
+  EXPECT_NEAR(S1Out[2], 23.0 / 3.0, 1e-9);
+  EXPECT_NEAR(S2Out[2], 13.0 / 3.0, 1e-9);
+  EXPECT_NEAR(POut[3], 47.0 / 3.0, 1e-9);
+}
+
+TEST(IndicatorsTest, ChartSuperTrendKeltnerAndLinreg) {
+  // Bars for SuperTrend(2, 1.0) & Keltner(2, 2.0):
+  // bar 0: H=12, L=10, C=11 (TR=2) -> na
+  // bar 1: H=14, L=12, C=13 (TR=3) -> ATR=(2+3)/2=2.5, EMA=(11+13)/2=12
+  //   hl2=13, basicU=15.5, basicL=10.5, C=13>=13 -> up, ST=10.5
+  //   Keltner: upper=12+5=17, lower=12-5=7
+  // bar 2: H=15, L=13, C=14 (TR=2) -> ATR=(2.5+2)/2=2.25
+  //   hl2=14, basicU=16.25, basicL=11.75 (>10.5 -> finalL=11.75), up -> 11.75
+  // bar 3: H=13, L=9, C=10 (TR=5) -> ATR=(2.25+5)/2=3.625
+  //   hl2=11, basicU=14.625 (<15.5 -> finalU=14.625), basicL=7.375 (<11.75 ->
+  //   finalL=11.75), C=10 < 11.75 -> flips to down, ST=14.625
+  // bar 4: H=18, L=14, C=17 (TR=8) -> ATR=(3.625+8)/2=5.8125
+  //   hl2=16, basicU=21.8125 (>14.625 & prevC=10<=14.625 -> finalU=14.625),
+  //   basicL=10.1875 (prevC=10<11.75 -> finalL=10.1875), C=17 > 14.625 -> flips
+  //   to up, ST=10.1875
+  const std::vector<dsl::Bar> Bars = {
+      makeBar(0, 11.0, 10.5, 12.0, 10.0, 100.0),
+      makeBar(1, 13.0, 12.5, 14.0, 12.0, 100.0),
+      makeBar(2, 14.0, 13.5, 15.0, 13.0, 100.0),
+      makeBar(3, 10.0, 13.0, 13.0, 9.0, 100.0),
+      makeBar(4, 17.0, 14.5, 18.0, 14.0, 100.0),
+  };
+  const auto StOut = probeSignedExpr("supertrend(2, 1.0)", Bars);
+  const auto KuOut = probeSignedExpr("keltner_upper(2, 2.0)", Bars);
+  const auto KlOut = probeSignedExpr("keltner_lower(2, 2.0)", Bars);
+  ASSERT_EQ(StOut.size(), 5U);
+  EXPECT_TRUE(dsl::isNaValue(StOut[0]));
+  EXPECT_NEAR(StOut[1], 10.5, 1e-9);
+  EXPECT_NEAR(StOut[2], 11.75, 1e-9);
+  EXPECT_NEAR(StOut[3], 14.625, 1e-9);
+  EXPECT_NEAR(StOut[4], 10.1875, 1e-9);
+
+  EXPECT_TRUE(dsl::isNaValue(KuOut[0]));
+  EXPECT_NEAR(KuOut[1], 17.0, 1e-9);
+  EXPECT_NEAR(KlOut[1], 7.0, 1e-9);
+
+  // Linreg and slope on {10, 12, 14, 14}:
+  // bar 2: {10, 12, 14} -> slope=2.0, linreg=14.0
+  // bar 3: {12, 14, 14} -> meanY=40/3, dx={-1,0,1}, num=2, den=2 -> slope=1,
+  //        linreg = 40/3 + 1 = 43/3
+  const auto LinBars = makeCloseBars({10.0, 12.0, 14.0, 14.0});
+  const auto LrOut = probeSignedExpr("linreg(close, 3)", LinBars);
+  const auto SlOut = probeSignedExpr("slope(close, 3)", LinBars);
+  const auto Lr1Out = probeSignedExpr("linreg(close, 1)", LinBars);
+  const auto Sl1Out = probeSignedExpr("slope(close, 1)", LinBars);
+  EXPECT_TRUE(dsl::isNaValue(LrOut[0]));
+  EXPECT_TRUE(dsl::isNaValue(LrOut[1]));
+  EXPECT_NEAR(LrOut[2], 14.0, 1e-9);
+  EXPECT_NEAR(SlOut[2], 2.0, 1e-9);
+  EXPECT_NEAR(LrOut[3], 43.0 / 3.0, 1e-9);
+  EXPECT_NEAR(SlOut[3], 1.0, 1e-9);
+  EXPECT_NEAR(Lr1Out[0], 10.0, 1e-9);
+  EXPECT_NEAR(Sl1Out[0], 0.0, 1e-9);
+}
+
+TEST(IndicatorsTest, ChartCandlestickPatterns) {
+  // bar 0: flat zero-range (H==L) -> all single-bar patterns false
+  // bar 1: doji (O=100, H=105, L=95, C=100.5 -> body=0.5 <= 0.1*10=1)
+  // bar 2: hammer + pin bar (O=100, C=101, H=101.2, L=95 -> body=1, lower=5,
+  //        upper=0.2, range=6.2; lower>=2, upper<=0.5, dom>=0.6*6.2=3.72)
+  // bar 3: shooting star + pin bar (O=101, C=100, H=106, L=99.8 -> body=1,
+  //        upper=5, lower=0.2, range=6.2)
+  // bar 4: bearish candle (O=102, C=99, H=103, L=98)
+  // bar 5: bullish engulfing (O=98.5, C=103, H=104, L=98)
+  // bar 6: bearish engulfing (O=103.5, C=98, H=105, L=97)
+  // bar 7: inside bar (O=100, C=101, H=104, L=98)
+  const std::vector<dsl::Bar> Bars = {
+      makeBar(0, 100.0, 100.0, 100.0, 100.0),
+      makeBar(1, 100.5, 100.0, 105.0, 95.0),
+      makeBar(2, 101.0, 100.0, 101.2, 95.0),
+      makeBar(3, 100.0, 101.0, 106.0, 99.8),
+      makeBar(4, 99.0, 102.0, 103.0, 98.0),
+      makeBar(5, 103.0, 98.5, 104.0, 98.0),
+      makeBar(6, 98.0, 103.5, 105.0, 97.0),
+      makeBar(7, 101.0, 100.0, 104.0, 98.0),
+  };
+  const auto Doji = probeBoolExpr("is_doji()", Bars);
+  const auto Hammer = probeBoolExpr("is_hammer()", Bars);
+  const auto Star = probeBoolExpr("is_shooting_star()", Bars);
+  const auto Pin = probeBoolExpr("is_pin_bar()", Bars);
+  const auto BullEng = probeBoolExpr("is_bullish_engulfing()", Bars);
+  const auto BearEng = probeBoolExpr("is_bearish_engulfing()", Bars);
+  const auto Inside = probeBoolExpr("is_inside_bar()", Bars);
+
+  EXPECT_FALSE(Doji[0]);
+  EXPECT_TRUE(Doji[1]);
+  EXPECT_FALSE(Doji[2]);
+
+  EXPECT_FALSE(Hammer[0]);
+  EXPECT_FALSE(Hammer[1]);
+  EXPECT_TRUE(Hammer[2]);
+  EXPECT_FALSE(Hammer[3]);
+
+  EXPECT_FALSE(Star[2]);
+  EXPECT_TRUE(Star[3]);
+
+  EXPECT_FALSE(Pin[0]);
+  EXPECT_FALSE(Pin[1]);
+  EXPECT_TRUE(Pin[2]);
+  EXPECT_TRUE(Pin[3]);
+
+  EXPECT_FALSE(BullEng[0]);
+  EXPECT_FALSE(BullEng[4]);
+  EXPECT_TRUE(BullEng[5]);
+  EXPECT_FALSE(BullEng[6]);
+
+  EXPECT_FALSE(BearEng[5]);
+  EXPECT_TRUE(BearEng[6]);
+  EXPECT_FALSE(BearEng[7]);
+
+  EXPECT_FALSE(Inside[0]);
+  EXPECT_FALSE(Inside[6]);
+  EXPECT_TRUE(Inside[7]);
+}
+
+TEST(IndicatorsTest, ChartSwingsMonotonicAndBarsSince) {
+  // Swing highs/lows with left=2, right=2 (confirmed only at bar t = peak + 2):
+  // idx:   0   1   2   3   4   5   6   7   8
+  // high: 10, 12, 15, 13, 11, 10, 14, 12, 11
+  // low:   8,  9, 11,  9,  7,  6,  9, 10,  9
+  // swing_high(2,2): peak 15 at idx 2 confirmed at idx 4!
+  //   bar 0..3: na; bar 4..7: 15; peak 14 at idx 6 confirmed at idx 8 -> 14
+  // swing_low(2,2): trough 6 at idx 5 confirmed at idx 7!
+  //   bar 0..6: na; bar 7..8: 6
+  const std::vector<dsl::Bar> SwingBars = {
+      makeBar(0, 9.0, 9.0, 10.0, 8.0, 100.0),
+      makeBar(1, 10.0, 10.0, 12.0, 9.0, 100.0),
+      makeBar(2, 13.0, 12.0, 15.0, 11.0, 100.0),
+      makeBar(3, 11.0, 12.0, 13.0, 9.0, 100.0),
+      makeBar(4, 9.0, 10.0, 11.0, 7.0, 100.0),
+      makeBar(5, 8.0, 9.0, 10.0, 6.0, 100.0),
+      makeBar(6, 12.0, 10.0, 14.0, 9.0, 100.0),
+      makeBar(7, 11.0, 11.0, 12.0, 10.0, 100.0),
+      makeBar(8, 10.0, 10.0, 11.0, 9.0, 100.0),
+  };
+  const auto ShOut = probeSignedExpr("swing_high(2, 2)", SwingBars);
+  const auto SlOut = probeSignedExpr("swing_low(2, 2)", SwingBars);
+  ASSERT_EQ(ShOut.size(), 9U);
+  for (std::size_t I = 0; I < 4; ++I) {
+    EXPECT_TRUE(dsl::isNaValue(ShOut[I])) << I;
+  }
+  for (std::size_t I = 4; I < 8; ++I) {
+    EXPECT_DOUBLE_EQ(ShOut[I], 15.0) << I;
+  }
+  EXPECT_DOUBLE_EQ(ShOut[8], 14.0);
+
+  for (std::size_t I = 0; I < 7; ++I) {
+    EXPECT_TRUE(dsl::isNaValue(SlOut[I])) << I;
+  }
+  EXPECT_DOUBLE_EQ(SlOut[7], 6.0);
+  EXPECT_DOUBLE_EQ(SlOut[8], 6.0);
+
+  // Flat bars -> no swing ever confirmed
+  const auto FlatBars = makeCloseBars({10.0, 10.0, 10.0, 10.0, 10.0, 10.0});
+  const auto FlatSh = probeSignedExpr("swing_high(2, 2)", FlatBars);
+  EXPECT_TRUE(dsl::isNaValue(FlatSh.back()));
+
+  // rising(close, 2) & falling(close, 2) on {10, 11, 12, 12, 11, 10}:
+  const auto MonoBars = makeCloseBars({10.0, 11.0, 12.0, 12.0, 11.0, 10.0});
+  const auto RisOut = probeBoolExpr("rising(close, 2)", MonoBars);
+  const auto FalOut = probeBoolExpr("falling(close, 2)", MonoBars);
+  EXPECT_FALSE(RisOut[0]);
+  EXPECT_FALSE(RisOut[1]);
+  EXPECT_TRUE(RisOut[2]);
+  EXPECT_FALSE(RisOut[3]);
+  EXPECT_FALSE(FalOut[4]);
+  EXPECT_TRUE(FalOut[5]);
+
+  // bars_since(close > open):
+  // bar 0: C=9, O=10 (false) -> na
+  // bar 1: C=11, O=10 (true) -> 0
+  // bar 2: C=10, O=11 (false) -> 1
+  // bar 3: C=10, O=10 (false) -> 2
+  // bar 4: C=12, O=11 (true) -> 0
+  const std::vector<dsl::Bar> BsBars = {
+      makeBar(0, 9.0, 10.0, 10.0, 9.0, 100.0),
+      makeBar(1, 11.0, 10.0, 11.0, 10.0, 100.0),
+      makeBar(2, 10.0, 11.0, 11.0, 10.0, 100.0),
+      makeBar(3, 10.0, 10.0, 10.0, 10.0, 100.0),
+      makeBar(4, 12.0, 11.0, 12.0, 11.0, 100.0),
+  };
+  const auto BsOut = probeSignedExpr("bars_since(close > open)", BsBars);
+  const auto BsLag = probeSignedExpr("bars_since(close > open)[1]", BsBars);
+  ASSERT_EQ(BsOut.size(), 5U);
+  EXPECT_TRUE(dsl::isNaValue(BsOut[0]));
+  EXPECT_DOUBLE_EQ(BsOut[1], 0.0);
+  EXPECT_DOUBLE_EQ(BsOut[2], 1.0);
+  EXPECT_DOUBLE_EQ(BsOut[3], 2.0);
+  EXPECT_DOUBLE_EQ(BsOut[4], 0.0);
+  EXPECT_TRUE(dsl::isNaValue(BsLag[1]));
+  EXPECT_DOUBLE_EQ(BsLag[2], 0.0);
+  EXPECT_DOUBLE_EQ(BsLag[3], 1.0);
+  EXPECT_DOUBLE_EQ(BsLag[4], 2.0);
+}
+
+TEST(IndicatorsTest, ChartAnalysisDeterminismAndOffsets) {
+  const std::string Src = R"dsl(
+rule "det_chart"
+  when not is_na(pivot(3)) and not is_na(supertrend(3, 2.0))
+       and not is_na(keltner_upper(3, 1.5)) and not is_na(linreg(close, 3))
+       and not is_na(swing_high(2, 2)) and not is_na(bars_since(close > open))
+       and (rising(close, 1) or falling(close, 1) or not is_doji())
+  then buy 1 lots
+  because "p={pivot(3)}; st={supertrend(3, 2.0)}; lr={linreg(close, 3)}; sl={slope(close, 3)}; sh={swing_high(2, 2)}; bs={bars_since(close > open)}"
+)dsl";
+  auto CompA = dsl::compile(Src, {}, 1);
+  auto CompB = dsl::compile(Src, {}, 1);
+  ASSERT_TRUE(CompA.Ok);
+  ASSERT_TRUE(CompB.Ok);
+
+  dsl::PortfolioSnapshot Port;
+  Port.Cash = 100'000.0;
+  Port.Equity = 100'000.0;
+  bool SawFired = false;
+  for (int StepIdx = 0; StepIdx < 18; ++StepIdx) {
+    const double Base = 100.0 + static_cast<double>((StepIdx * 5) % 9);
+    const auto BarNow = makeBar(StepIdx, Base + 0.5, Base, Base + 2.0,
+                                Base - 1.5, 100.0 + StepIdx * 10.0);
+    const auto ResA = dsl::step(*CompA.Instance, 0, BarNow, Port, false);
+    const auto ResB = dsl::step(*CompB.Instance, 0, BarNow, Port, false);
+    ASSERT_FALSE(ResA.Error.has_value());
+    ASSERT_FALSE(ResB.Error.has_value());
+    EXPECT_EQ(ResA.Intents, ResB.Intents);
+    if (!ResA.Intents.empty()) {
+      SawFired = true;
+    }
+  }
+  EXPECT_TRUE(SawFired);
+}
+
 } // namespace

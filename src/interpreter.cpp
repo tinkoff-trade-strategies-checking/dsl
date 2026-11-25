@@ -76,6 +76,8 @@ public:
       return Desc.ConstantValue;
     case DagInputKind::ExprAst:
       return evalNumber(ExprId);
+    case DagInputKind::BoolExprAst:
+      return evalBool(ExprId) ? 1.0 : 0.0;
     }
     return kNa;
   }

@@ -166,21 +166,32 @@ bool isKeyword(std::string_view Name) noexcept {
 }
 
 std::optional<BuiltinFuncInfo> getBuiltinFuncInfo(std::string_view Name) {
-  if (Name == "obv") {
+  if (Name == "obv" || Name == "is_doji" || Name == "is_hammer" ||
+      Name == "is_shooting_star" || Name == "is_bullish_engulfing" ||
+      Name == "is_bearish_engulfing" || Name == "is_inside_bar" ||
+      Name == "is_pin_bar") {
     return BuiltinFuncInfo{0, 0U};
   }
   if (Name == "atr" || Name == "vwap" || Name == "stoch_k" ||
       Name == "stoch_rsi" || Name == "adx" || Name == "plus_di" ||
       Name == "minus_di" || Name == "cci" || Name == "willr" ||
-      Name == "bull_power" || Name == "bear_power" || Name == "mfi") {
+      Name == "bull_power" || Name == "bear_power" || Name == "mfi" ||
+      Name == "pivot" || Name == "pivot_r1" || Name == "pivot_r2" ||
+      Name == "pivot_s1" || Name == "pivot_s2") {
     return BuiltinFuncInfo{1, 1U << 0U};
   }
   if (Name == "sma" || Name == "ema" || Name == "wma" || Name == "rsi" ||
       Name == "stdev" || Name == "highest" || Name == "lowest" ||
-      Name == "change" || Name == "bb_mid" || Name == "roc") {
+      Name == "change" || Name == "bb_mid" || Name == "roc" ||
+      Name == "linreg" || Name == "slope" || Name == "rising" ||
+      Name == "falling") {
     return BuiltinFuncInfo{2, 1U << 1U};
   }
-  if (Name == "stoch_d") {
+  if (Name == "supertrend" || Name == "keltner_upper" ||
+      Name == "keltner_lower") {
+    return BuiltinFuncInfo{2, 1U << 0U};
+  }
+  if (Name == "stoch_d" || Name == "swing_high" || Name == "swing_low") {
     return BuiltinFuncInfo{2, (1U << 0U) | (1U << 1U)};
   }
   if (Name == "bb_upper" || Name == "bb_lower") {
@@ -199,7 +210,8 @@ std::optional<BuiltinFuncInfo> getBuiltinFuncInfo(std::string_view Name) {
       Name == "max") {
     return BuiltinFuncInfo{2, 0U};
   }
-  if (Name == "abs" || Name == "sqrt" || Name == "is_na") {
+  if (Name == "abs" || Name == "sqrt" || Name == "is_na" ||
+      Name == "bars_since") {
     return BuiltinFuncInfo{1, 0U};
   }
   return std::nullopt;

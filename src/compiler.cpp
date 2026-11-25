@@ -194,11 +194,83 @@ std::optional<DagNodeKind> dagNodeKind(std::string_view Name) noexcept {
   if (Name == "mfi") {
     return DagNodeKind::Mfi;
   }
+  if (Name == "pivot") {
+    return DagNodeKind::Pivot;
+  }
+  if (Name == "pivot_r1") {
+    return DagNodeKind::PivotR1;
+  }
+  if (Name == "pivot_r2") {
+    return DagNodeKind::PivotR2;
+  }
+  if (Name == "pivot_s1") {
+    return DagNodeKind::PivotS1;
+  }
+  if (Name == "pivot_s2") {
+    return DagNodeKind::PivotS2;
+  }
+  if (Name == "supertrend") {
+    return DagNodeKind::SuperTrend;
+  }
+  if (Name == "keltner_upper") {
+    return DagNodeKind::KeltnerUpper;
+  }
+  if (Name == "keltner_lower") {
+    return DagNodeKind::KeltnerLower;
+  }
+  if (Name == "linreg") {
+    return DagNodeKind::Linreg;
+  }
+  if (Name == "slope") {
+    return DagNodeKind::Slope;
+  }
+  if (Name == "is_doji") {
+    return DagNodeKind::IsDoji;
+  }
+  if (Name == "is_hammer") {
+    return DagNodeKind::IsHammer;
+  }
+  if (Name == "is_shooting_star") {
+    return DagNodeKind::IsShootingStar;
+  }
+  if (Name == "is_bullish_engulfing") {
+    return DagNodeKind::IsBullishEngulfing;
+  }
+  if (Name == "is_bearish_engulfing") {
+    return DagNodeKind::IsBearishEngulfing;
+  }
+  if (Name == "is_inside_bar") {
+    return DagNodeKind::IsInsideBar;
+  }
+  if (Name == "is_pin_bar") {
+    return DagNodeKind::IsPinBar;
+  }
+  if (Name == "swing_high") {
+    return DagNodeKind::SwingHigh;
+  }
+  if (Name == "swing_low") {
+    return DagNodeKind::SwingLow;
+  }
+  if (Name == "rising") {
+    return DagNodeKind::Rising;
+  }
+  if (Name == "falling") {
+    return DagNodeKind::Falling;
+  }
+  if (Name == "bars_since") {
+    return DagNodeKind::BarsSince;
+  }
   return std::nullopt;
 }
 
 bool isBoolDagKind(DagNodeKind Kind) noexcept {
-  return Kind == DagNodeKind::Crossover || Kind == DagNodeKind::Crossunder;
+  return Kind == DagNodeKind::Crossover || Kind == DagNodeKind::Crossunder ||
+         Kind == DagNodeKind::IsDoji || Kind == DagNodeKind::IsHammer ||
+         Kind == DagNodeKind::IsShootingStar ||
+         Kind == DagNodeKind::IsBullishEngulfing ||
+         Kind == DagNodeKind::IsBearishEngulfing ||
+         Kind == DagNodeKind::IsInsideBar || Kind == DagNodeKind::IsPinBar ||
+         Kind == DagNodeKind::Rising || Kind == DagNodeKind::Falling;
 }
 
 std::optional<PureCallKind> pureCallKind(std::string_view Name) noexcept {
@@ -469,6 +541,13 @@ private:
 
       switch (*Kind) {
       case DagNodeKind::Obv:
+      case DagNodeKind::IsDoji:
+      case DagNodeKind::IsHammer:
+      case DagNodeKind::IsShootingStar:
+      case DagNodeKind::IsBullishEngulfing:
+      case DagNodeKind::IsBearishEngulfing:
+      case DagNodeKind::IsInsideBar:
+      case DagNodeKind::IsPinBar:
         Spec.Period = 0;
         break;
       case DagNodeKind::Atr:
@@ -483,9 +562,22 @@ private:
       case DagNodeKind::BullPower:
       case DagNodeKind::BearPower:
       case DagNodeKind::Mfi:
+      case DagNodeKind::Pivot:
+      case DagNodeKind::PivotR1:
+      case DagNodeKind::PivotR2:
+      case DagNodeKind::PivotS1:
+      case DagNodeKind::PivotS2:
         Spec.Period = resolvePeriod(*Call->Args[0]);
         break;
+      case DagNodeKind::SuperTrend:
+      case DagNodeKind::KeltnerUpper:
+      case DagNodeKind::KeltnerLower:
+        Spec.Period = resolvePeriod(*Call->Args[0]);
+        Spec.InputA = buildDagInput(*Call->Args[1], ExprIdA);
+        break;
       case DagNodeKind::StochD:
+      case DagNodeKind::SwingHigh:
+      case DagNodeKind::SwingLow:
         Spec.Period = resolvePeriod(*Call->Args[0]);
         Spec.Period2 = resolvePeriod(*Call->Args[1]);
         break;
@@ -518,6 +610,10 @@ private:
         Spec.InputA = buildDagInput(*Call->Args[0], ExprIdA);
         Spec.InputB = buildDagInput(*Call->Args[1], ExprIdB);
         break;
+      case DagNodeKind::BarsSince:
+        Spec.Period = 0;
+        Spec.InputA = buildBoolDagInput(*Call->Args[0], ExprIdA);
+        break;
       case DagNodeKind::Sma:
       case DagNodeKind::Ema:
       case DagNodeKind::Wma:
@@ -528,6 +624,10 @@ private:
       case DagNodeKind::Change:
       case DagNodeKind::BbMid:
       case DagNodeKind::Roc:
+      case DagNodeKind::Linreg:
+      case DagNodeKind::Slope:
+      case DagNodeKind::Rising:
+      case DagNodeKind::Falling:
         Spec.Period = resolvePeriod(*Call->Args[1]);
         Spec.InputA = buildDagInput(*Call->Args[0], ExprIdA);
         break;
@@ -585,6 +685,25 @@ private:
     }
     OutExprId = compileExpr(Arg);
     Desc.Kind = DagInputKind::ExprAst;
+    Desc.AstExpr = &Arg;
+    return Desc;
+  }
+
+  DagInputDesc buildBoolDagInput(const Expr &Arg, std::size_t &OutExprId) {
+    DagInputDesc Desc;
+    if (const auto *Lit = std::get_if<BoolLitExpr>(&Arg.Node)) {
+      Desc.Kind = DagInputKind::Constant;
+      Desc.ConstantValue = Lit->Value ? 1.0 : 0.0;
+      return Desc;
+    }
+    if (const auto It = ExprToDagIdx.find(&Arg); It != ExprToDagIdx.end()) {
+      Desc.Kind = DagInputKind::DagNode;
+      Desc.NodeIndex = It->second;
+      Desc.Offset = 0;
+      return Desc;
+    }
+    OutExprId = compileExpr(Arg);
+    Desc.Kind = DagInputKind::BoolExprAst;
     Desc.AstExpr = &Arg;
     return Desc;
   }
