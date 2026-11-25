@@ -790,10 +790,8 @@ TEST(IndicatorsTest, TaStochasticsWilliamsAndCci) {
 TEST(IndicatorsTest, TaDirectionalUltOscAndElderRay) {
   // Strictly rising bars -> +DI = 100, -DI = 0, DX = 100, ADX = 100
   const std::vector<dsl::Bar> UpBars = {
-      makeBar(0, 10.0, 10.0, 10.0, 10.0),
-      makeBar(1, 12.0, 11.0, 12.0, 11.0),
-      makeBar(2, 14.0, 13.0, 14.0, 13.0),
-      makeBar(3, 16.0, 15.0, 16.0, 15.0),
+      makeBar(0, 10.0, 10.0, 10.0, 10.0), makeBar(1, 12.0, 11.0, 12.0, 11.0),
+      makeBar(2, 14.0, 13.0, 14.0, 13.0), makeBar(3, 16.0, 15.0, 16.0, 15.0),
       makeBar(4, 18.0, 17.0, 18.0, 17.0),
   };
   const auto PlusDi = probeSignedExpr("plus_di(2)", UpBars);

@@ -97,9 +97,9 @@ std::optional<BuiltinFuncSpec> getBuiltinFuncSpec(std::string_view Name) {
 }
 
 bool isDirectPriceIndicatorName(std::string_view Name) noexcept {
-  return Name == "sma" || Name == "ema" || Name == "wma" ||
-         Name == "highest" || Name == "lowest" || Name == "bb_mid" ||
-         Name == "bb_upper" || Name == "bb_lower";
+  return Name == "sma" || Name == "ema" || Name == "wma" || Name == "highest" ||
+         Name == "lowest" || Name == "bb_mid" || Name == "bb_upper" ||
+         Name == "bb_lower";
 }
 
 bool isSpaceChar(std::string_view Text, std::size_t Pos,

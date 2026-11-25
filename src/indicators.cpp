@@ -567,7 +567,8 @@ bool stepDirectional(std::size_t Period, DagNodeState &State,
   const double HighClose = std::abs(CurrentBar.High - State.PrevClose);
   const double LowClose = std::abs(CurrentBar.Low - State.PrevClose);
   const double Tr = std::max({HighLow, HighClose, LowClose});
-  if (!std::isfinite(UpMove) || !std::isfinite(DownMove) || !std::isfinite(Tr)) {
+  if (!std::isfinite(UpMove) || !std::isfinite(DownMove) ||
+      !std::isfinite(Tr)) {
     return false;
   }
   const double PlusDm = (UpMove > DownMove && UpMove > 0.0) ? UpMove : 0.0;
@@ -903,7 +904,8 @@ DagNodeState makeDagNodeState(const DagNodeSpec &Spec) {
     State.EmaSignal.InitWindow = RingBuffer(Spec.Period3);
     break;
   case DagNodeKind::UltOsc: {
-    const std::size_t MaxP = std::max({Spec.Period, Spec.Period2, Spec.Period3});
+    const std::size_t MaxP =
+        std::max({Spec.Period, Spec.Period2, Spec.Period3});
     State.InputWindow = RingBuffer(MaxP);
     State.AuxWindow = RingBuffer(MaxP);
     break;

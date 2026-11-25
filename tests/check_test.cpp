@@ -623,11 +623,13 @@ rule "ta_all"
       "rule \"r\" when obv(1) > 0 then cancel because \"x\"",
       "rule \"r\" when bb_upper(close, 20) > 0 then cancel because \"x\"",
       "rule \"r\" when macd(close, 12) > 0 then cancel because \"x\"",
-      "rule \"r\" when macd_signal(close, 12, 26) > 0 then cancel because \"x\"",
+      "rule \"r\" when macd_signal(close, 12, 26) > 0 "
+      "then cancel because \"x\"",
       "rule \"r\" when stoch_d(14) > 0 then cancel because \"x\"",
       "rule \"r\" when ult_osc(7, 14) > 0 then cancel because \"x\"",
       "rule \"r\" when wma(equity, 5) > 0 then cancel because \"x\"",
-      "rule \"r\" when bb_upper(close, 5, position) > 0 then cancel because \"x\"",
+      "rule \"r\" when bb_upper(close, 5, position) > 0 "
+      "then cancel because \"x\"",
       "rule \"r\" when macd(cash, 3, 6) > 0 then cancel because \"x\"",
       "rule \"r\" when param_bad(close) > 0 then cancel because \"x\"",
   };
