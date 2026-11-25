@@ -25,12 +25,17 @@ namespace {
 struct BuiltinFuncSpec {
   std::size_t Arity = 0;
   std::uint8_t PeriodArgMask = 0;
+  std::uint8_t BoolArgMask = 0;
   ValueType ReturnType = ValueType::Number;
   bool IsDagNode = false;
   bool AllowsOffset = false;
 
   bool isPeriodArg(std::size_t Index) const noexcept {
     return Index < 8U && ((PeriodArgMask & (1U << Index)) != 0U);
+  }
+
+  bool isBoolArg(std::size_t Index) const noexcept {
+    return Index < 8U && ((BoolArgMask & (1U << Index)) != 0U);
   }
 };
 
@@ -49,49 +54,67 @@ bool isPortfolioVar(std::string_view Name) noexcept {
 
 std::optional<BuiltinFuncSpec> getBuiltinFuncSpec(std::string_view Name) {
   if (Name == "obv") {
-    return BuiltinFuncSpec{0, 0U, ValueType::Number, true, true};
+    return BuiltinFuncSpec{0, 0U, 0U, ValueType::Number, true, true};
+  }
+  if (Name == "is_doji" || Name == "is_hammer" || Name == "is_shooting_star" ||
+      Name == "is_bullish_engulfing" || Name == "is_bearish_engulfing" ||
+      Name == "is_inside_bar" || Name == "is_pin_bar") {
+    return BuiltinFuncSpec{0, 0U, 0U, ValueType::Bool, true, false};
   }
   if (Name == "atr" || Name == "vwap" || Name == "stoch_k" ||
       Name == "stoch_rsi" || Name == "adx" || Name == "plus_di" ||
       Name == "minus_di" || Name == "cci" || Name == "willr" ||
-      Name == "bull_power" || Name == "bear_power" || Name == "mfi") {
-    return BuiltinFuncSpec{1, 1U << 0U, ValueType::Number, true, true};
+      Name == "bull_power" || Name == "bear_power" || Name == "mfi" ||
+      Name == "pivot" || Name == "pivot_r1" || Name == "pivot_r2" ||
+      Name == "pivot_s1" || Name == "pivot_s2") {
+    return BuiltinFuncSpec{1, 1U << 0U, 0U, ValueType::Number, true, true};
+  }
+  if (Name == "bars_since") {
+    return BuiltinFuncSpec{1, 0U, 1U << 0U, ValueType::Number, true, true};
   }
   if (Name == "sma" || Name == "ema" || Name == "wma" || Name == "rsi" ||
       Name == "stdev" || Name == "highest" || Name == "lowest" ||
-      Name == "change" || Name == "bb_mid" || Name == "roc") {
-    return BuiltinFuncSpec{2, 1U << 1U, ValueType::Number, true, true};
+      Name == "change" || Name == "bb_mid" || Name == "roc" ||
+      Name == "linreg" || Name == "slope") {
+    return BuiltinFuncSpec{2, 1U << 1U, 0U, ValueType::Number, true, true};
   }
-  if (Name == "stoch_d") {
-    return BuiltinFuncSpec{2, (1U << 0U) | (1U << 1U), ValueType::Number, true,
-                           true};
+  if (Name == "rising" || Name == "falling") {
+    return BuiltinFuncSpec{2, 1U << 1U, 0U, ValueType::Bool, true, false};
+  }
+  if (Name == "supertrend" || Name == "keltner_upper" ||
+      Name == "keltner_lower") {
+    return BuiltinFuncSpec{2, 1U << 0U, 0U, ValueType::Number, true, true};
+  }
+  if (Name == "stoch_d" || Name == "swing_high" || Name == "swing_low") {
+    return BuiltinFuncSpec{2, (1U << 0U) | (1U << 1U), 0U, ValueType::Number,
+                           true, true};
   }
   if (Name == "bb_upper" || Name == "bb_lower") {
-    return BuiltinFuncSpec{3, 1U << 1U, ValueType::Number, true, true};
+    return BuiltinFuncSpec{3, 1U << 1U, 0U, ValueType::Number, true, true};
   }
   if (Name == "macd") {
-    return BuiltinFuncSpec{3, (1U << 1U) | (1U << 2U), ValueType::Number, true,
-                           true};
+    return BuiltinFuncSpec{3, (1U << 1U) | (1U << 2U), 0U, ValueType::Number,
+                           true, true};
   }
   if (Name == "ult_osc") {
-    return BuiltinFuncSpec{3, (1U << 0U) | (1U << 1U) | (1U << 2U),
+    return BuiltinFuncSpec{3, (1U << 0U) | (1U << 1U) | (1U << 2U), 0U,
                            ValueType::Number, true, true};
   }
   if (Name == "macd_signal" || Name == "macd_hist") {
-    return BuiltinFuncSpec{4, (1U << 1U) | (1U << 2U) | (1U << 3U),
+    return BuiltinFuncSpec{4, (1U << 1U) | (1U << 2U) | (1U << 3U), 0U,
                            ValueType::Number, true, true};
   }
   if (Name == "crossover" || Name == "crossunder") {
-    return BuiltinFuncSpec{2, 0U, ValueType::Bool, true, false};
+    return BuiltinFuncSpec{2, 0U, 0U, ValueType::Bool, true, false};
   }
   if (Name == "min" || Name == "max") {
-    return BuiltinFuncSpec{2, 0U, ValueType::Number, false, false};
+    return BuiltinFuncSpec{2, 0U, 0U, ValueType::Number, false, false};
   }
   if (Name == "abs" || Name == "sqrt") {
-    return BuiltinFuncSpec{1, 0U, ValueType::Number, false, false};
+    return BuiltinFuncSpec{1, 0U, 0U, ValueType::Number, false, false};
   }
   if (Name == "is_na") {
-    return BuiltinFuncSpec{1, 0U, ValueType::Bool, false, false};
+    return BuiltinFuncSpec{1, 0U, 0U, ValueType::Bool, false, false};
   }
   return std::nullopt;
 }
@@ -99,7 +122,7 @@ std::optional<BuiltinFuncSpec> getBuiltinFuncSpec(std::string_view Name) {
 bool isDirectPriceIndicatorName(std::string_view Name) noexcept {
   return Name == "sma" || Name == "ema" || Name == "wma" || Name == "highest" ||
          Name == "lowest" || Name == "bb_mid" || Name == "bb_upper" ||
-         Name == "bb_lower";
+         Name == "bb_lower" || Name == "linreg";
 }
 
 bool isSpaceChar(std::string_view Text, std::size_t Pos,
@@ -794,6 +817,13 @@ private:
       const ValueType ArgType = checkExpr(*Call.Args[I], ChildStateful);
       if (ArgType == ValueType::Error) {
         AllValid = false;
+      } else if (Spec->isBoolArg(I)) {
+        if (ArgType != ValueType::Bool) {
+          std::string Msg = "Аргумент функции '" + Call.Callee;
+          Msg += "' должен иметь логический тип";
+          emitTypeError(Call.Args[I]->Range, std::move(Msg));
+          AllValid = false;
+        }
       } else if (ArgType != ValueType::Number) {
         std::string Msg = "Аргумент функции '" + Call.Callee;
         Msg += "' должен иметь числовой тип";
@@ -934,7 +964,16 @@ private:
       }
     }
     if (const auto *Call = std::get_if<CallExpr>(&Node->Node)) {
-      if (Call->Callee == "vwap" && Call->Args.size() == 1) {
+      if ((Call->Callee == "vwap" || Call->Callee == "pivot" ||
+           Call->Callee == "pivot_r1" || Call->Callee == "pivot_r2" ||
+           Call->Callee == "pivot_s1" || Call->Callee == "pivot_s2") &&
+          Call->Args.size() == 1) {
+        return true;
+      }
+      if ((Call->Callee == "supertrend" || Call->Callee == "keltner_upper" ||
+           Call->Callee == "keltner_lower" || Call->Callee == "swing_high" ||
+           Call->Callee == "swing_low") &&
+          Call->Args.size() == 2) {
         return true;
       }
       return isDirectPriceIndicatorName(Call->Callee) &&

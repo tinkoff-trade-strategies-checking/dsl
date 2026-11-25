@@ -854,6 +854,295 @@ double updateMfi(std::size_t Period, DagNodeState &State,
   return computeRsi(PosSum, NegSum);
 }
 
+double updatePivotFamily(const DagNodeSpec &Spec, DagNodeState &State,
+                         const Bar &CurrentBar) {
+  if (Spec.Period == 0 || !isValidOhlc(CurrentBar)) {
+    return kNa;
+  }
+  double Result = kNa;
+  if (State.InputWindow.size() >= Spec.Period && State.HasPrevClose) {
+    const double HighestHigh = State.InputWindow.maxOldestToNewest();
+    const double LowestLow = State.AuxWindow.minOldestToNewest();
+    const double PrevClose = State.PrevClose;
+    const double PivotVal = (HighestHigh + LowestLow + PrevClose) / 3.0;
+    if (std::isfinite(HighestHigh) && std::isfinite(LowestLow) &&
+        std::isfinite(PrevClose) && std::isfinite(PivotVal)) {
+      switch (Spec.Kind) {
+      case DagNodeKind::Pivot:
+        Result = PivotVal;
+        break;
+      case DagNodeKind::PivotR1:
+        Result = 2.0 * PivotVal - LowestLow;
+        break;
+      case DagNodeKind::PivotR2:
+        Result = PivotVal + (HighestHigh - LowestLow);
+        break;
+      case DagNodeKind::PivotS1:
+        Result = 2.0 * PivotVal - HighestHigh;
+        break;
+      case DagNodeKind::PivotS2:
+        Result = PivotVal - (HighestHigh - LowestLow);
+        break;
+      default:
+        break;
+      }
+    }
+  }
+  State.InputWindow.push(CurrentBar.High);
+  State.AuxWindow.push(CurrentBar.Low);
+  State.PrevClose = CurrentBar.Close;
+  State.HasPrevClose = true;
+  return Result;
+}
+
+double updateSuperTrend(std::size_t Period, DagNodeState &State, double Mult,
+                        const Bar &CurrentBar) {
+  if (Period == 0 || !isValidOhlc(CurrentBar) || !std::isfinite(Mult)) {
+    return kNa;
+  }
+  const double PrevCloseVal = State.PrevClose;
+  const bool HadPrevClose = State.HasPrevClose;
+  const double AtrVal = updateAtr(Period, State, CurrentBar);
+  if (!std::isfinite(AtrVal)) {
+    return kNa;
+  }
+  const double Hl2 = (CurrentBar.High + CurrentBar.Low) / 2.0;
+  const double BasicUpper = Hl2 + Mult * AtrVal;
+  const double BasicLower = Hl2 - Mult * AtrVal;
+  if (!std::isfinite(Hl2) || !std::isfinite(BasicUpper) ||
+      !std::isfinite(BasicLower)) {
+    return kNa;
+  }
+  if (!State.SuperTrendInitialized) {
+    State.SuperTrendUpper = BasicUpper;
+    State.SuperTrendLower = BasicLower;
+    State.SuperTrendUp = (CurrentBar.Close >= Hl2);
+    State.SuperTrendInitialized = true;
+    return State.SuperTrendUp ? State.SuperTrendLower : State.SuperTrendUpper;
+  }
+  const double FinalUpper =
+      (BasicUpper < State.SuperTrendUpper ||
+       (HadPrevClose && PrevCloseVal > State.SuperTrendUpper))
+          ? BasicUpper
+          : State.SuperTrendUpper;
+  const double FinalLower =
+      (BasicLower > State.SuperTrendLower ||
+       (HadPrevClose && PrevCloseVal < State.SuperTrendLower))
+          ? BasicLower
+          : State.SuperTrendLower;
+  bool NextUp = State.SuperTrendUp;
+  if (State.SuperTrendUp) {
+    if (CurrentBar.Close < FinalLower) {
+      NextUp = false;
+    }
+  } else {
+    if (CurrentBar.Close > FinalUpper) {
+      NextUp = true;
+    }
+  }
+  State.SuperTrendUpper = FinalUpper;
+  State.SuperTrendLower = FinalLower;
+  State.SuperTrendUp = NextUp;
+  return NextUp ? FinalLower : FinalUpper;
+}
+
+double updateKeltner(const DagNodeSpec &Spec, DagNodeState &State, double Mult,
+                     const Bar &CurrentBar) {
+  if (Spec.Period == 0 || !isValidOhlc(CurrentBar) || !std::isfinite(Mult)) {
+    return kNa;
+  }
+  const double EmaVal =
+      stepEmaTracker(State.EmaFast, Spec.Period, CurrentBar.Close);
+  const double AtrVal = updateAtr(Spec.Period, State, CurrentBar);
+  if (!std::isfinite(EmaVal) || !std::isfinite(AtrVal)) {
+    return kNa;
+  }
+  return Spec.Kind == DagNodeKind::KeltnerUpper ? (EmaVal + Mult * AtrVal)
+                                                : (EmaVal - Mult * AtrVal);
+}
+
+double updateLinregFamily(const DagNodeSpec &Spec, DagNodeState &State,
+                          double InputA) {
+  if (Spec.Period == 0 || !std::isfinite(InputA)) {
+    return kNa;
+  }
+  State.InputWindow.push(InputA);
+  if (State.InputWindow.size() < Spec.Period) {
+    return kNa;
+  }
+  if (Spec.Period == 1) {
+    return Spec.Kind == DagNodeKind::Linreg ? InputA : 0.0;
+  }
+  const auto PeriodD = static_cast<double>(Spec.Period);
+  const double MeanY = State.InputWindow.sumOldestToNewest() / PeriodD;
+  if (!std::isfinite(MeanY)) {
+    return kNa;
+  }
+  const double MeanX = (PeriodD - 1.0) / 2.0;
+  double Num = 0.0;
+  for (std::size_t Idx = 0; Idx < Spec.Period; ++Idx) {
+    const double YVal = State.InputWindow.at(Spec.Period - 1 - Idx);
+    const double Dx = static_cast<double>(Idx) - MeanX;
+    Num += Dx * (YVal - MeanY);
+  }
+  const double Den = PeriodD * (PeriodD * PeriodD - 1.0) / 12.0;
+  if (!std::isfinite(Num) || !std::isfinite(Den) || Den == 0.0) {
+    return kNa;
+  }
+  const double SlopeVal = Num / Den;
+  if (!std::isfinite(SlopeVal)) {
+    return kNa;
+  }
+  if (Spec.Kind == DagNodeKind::Slope) {
+    return SlopeVal;
+  }
+  return MeanY + SlopeVal * MeanX;
+}
+
+double updateSingleBarPattern(DagNodeKind Kind, const Bar &CurrentBar) {
+  if (!std::isfinite(CurrentBar.Open) || !isValidOhlc(CurrentBar) ||
+      !(CurrentBar.High > CurrentBar.Low)) {
+    return 0.0;
+  }
+  const double Range = CurrentBar.High - CurrentBar.Low;
+  const double Body = std::abs(CurrentBar.Close - CurrentBar.Open);
+  const double UpperWick =
+      CurrentBar.High - std::max(CurrentBar.Open, CurrentBar.Close);
+  const double LowerWick =
+      std::min(CurrentBar.Open, CurrentBar.Close) - CurrentBar.Low;
+  if (!std::isfinite(Range) || Range <= 0.0 || !std::isfinite(Body) ||
+      !std::isfinite(UpperWick) || !std::isfinite(LowerWick)) {
+    return 0.0;
+  }
+  bool Matched = false;
+  switch (Kind) {
+  case DagNodeKind::IsDoji:
+    Matched = (Body <= 0.1 * Range);
+    break;
+  case DagNodeKind::IsHammer:
+    Matched = (LowerWick >= 2.0 * Body && UpperWick <= 0.5 * Body);
+    break;
+  case DagNodeKind::IsShootingStar:
+    Matched = (UpperWick >= 2.0 * Body && LowerWick <= 0.5 * Body);
+    break;
+  case DagNodeKind::IsPinBar: {
+    const double DominantWick = std::max(UpperWick, LowerWick);
+    Matched = (DominantWick >= 2.0 * Body && DominantWick >= 0.6 * Range);
+    break;
+  }
+  default:
+    break;
+  }
+  return Matched ? 1.0 : 0.0;
+}
+
+double updateEngulfing(DagNodeState &State, const Bar &CurrentBar,
+                       bool Bullish) {
+  const double CurOpen = sanitizeFinite(CurrentBar.Open);
+  const double CurClose = sanitizeFinite(CurrentBar.Close);
+  bool Matched = false;
+  if (State.HasPrevClose && std::isfinite(State.PrevOpen) &&
+      std::isfinite(State.PrevClose) && std::isfinite(CurOpen) &&
+      std::isfinite(CurClose)) {
+    if (Bullish) {
+      Matched = (State.PrevClose < State.PrevOpen && CurClose > CurOpen &&
+                 CurOpen <= State.PrevClose && CurClose >= State.PrevOpen);
+    } else {
+      Matched = (State.PrevClose > State.PrevOpen && CurClose < CurOpen &&
+                 CurOpen >= State.PrevClose && CurClose <= State.PrevOpen);
+    }
+  }
+  State.PrevOpen = CurOpen;
+  State.PrevClose = CurClose;
+  State.HasPrevClose = true;
+  return Matched ? 1.0 : 0.0;
+}
+
+double updateInsideBar(DagNodeState &State, const Bar &CurrentBar) {
+  const double CurHigh = sanitizeFinite(CurrentBar.High);
+  const double CurLow = sanitizeFinite(CurrentBar.Low);
+  bool Matched = false;
+  if (State.HasPrevClose && std::isfinite(State.PrevHigh) &&
+      std::isfinite(State.PrevLow) && std::isfinite(CurHigh) &&
+      std::isfinite(CurLow)) {
+    Matched = (CurHigh <= State.PrevHigh && CurLow >= State.PrevLow);
+  }
+  State.PrevHigh = CurHigh;
+  State.PrevLow = CurLow;
+  State.HasPrevClose = true;
+  return Matched ? 1.0 : 0.0;
+}
+
+double updateSwing(const DagNodeSpec &Spec, DagNodeState &State,
+                   const Bar &CurrentBar) {
+  const bool IsHigh = (Spec.Kind == DagNodeKind::SwingHigh);
+  const double Val = IsHigh ? CurrentBar.High : CurrentBar.Low;
+  if (Spec.Period == 0 || Spec.Period2 == 0 || !std::isfinite(Val)) {
+    return kNa;
+  }
+  const std::size_t Left = Spec.Period;
+  const std::size_t Right = Spec.Period2;
+  const std::size_t WinSize = Left + Right + 1;
+  State.InputWindow.push(Val);
+  if (State.InputWindow.size() >= WinSize) {
+    const double Candidate = State.InputWindow.at(Right);
+    bool Confirmed = std::isfinite(Candidate);
+    for (std::size_t Off = Right + 1; Confirmed && Off <= Right + Left; ++Off) {
+      const double LeftVal = State.InputWindow.at(Off);
+      if (IsHigh ? !(Candidate >= LeftVal) : !(Candidate <= LeftVal)) {
+        Confirmed = false;
+      }
+    }
+    for (std::size_t Off = 0; Confirmed && Off < Right; ++Off) {
+      const double RightVal = State.InputWindow.at(Off);
+      if (IsHigh ? !(Candidate > RightVal) : !(Candidate < RightVal)) {
+        Confirmed = false;
+      }
+    }
+    if (Confirmed) {
+      State.LastSwing = Candidate;
+      State.HasSwing = true;
+    }
+  }
+  return State.HasSwing ? State.LastSwing : kNa;
+}
+
+double updateMonotonic(std::size_t Period, DagNodeState &State, double InputA,
+                       bool IsRising) {
+  if (Period == 0) {
+    return 0.0;
+  }
+  const double Current = sanitizeFinite(InputA);
+  State.InputWindow.push(Current);
+  if (State.InputWindow.size() <= Period) {
+    return 0.0;
+  }
+  for (std::size_t Off = 0; Off < Period; ++Off) {
+    const double Newer = State.InputWindow.at(Off);
+    const double Older = State.InputWindow.at(Off + 1);
+    if (!std::isfinite(Newer) || !std::isfinite(Older)) {
+      return 0.0;
+    }
+    if (IsRising ? !(Newer > Older) : !(Newer < Older)) {
+      return 0.0;
+    }
+  }
+  return 1.0;
+}
+
+double updateBarsSince(DagNodeState &State, double InputA) {
+  if (std::isfinite(InputA) && InputA != 0.0) {
+    State.BarsSinceCount = 0;
+    State.HasBarsSince = true;
+    return 0.0;
+  }
+  if (!State.HasBarsSince) {
+    return kNa;
+  }
+  ++State.BarsSinceCount;
+  return static_cast<double>(State.BarsSinceCount);
+}
+
 } // namespace
 
 DagNodeState makeDagNodeState(const DagNodeSpec &Spec) {
@@ -872,18 +1161,35 @@ DagNodeState makeDagNodeState(const DagNodeSpec &Spec) {
   case DagNodeKind::Cci:
   case DagNodeKind::BullPower:
   case DagNodeKind::BearPower:
+  case DagNodeKind::Linreg:
+  case DagNodeKind::Slope:
     State.InputWindow = RingBuffer(Spec.Period);
     break;
   case DagNodeKind::Change:
   case DagNodeKind::Roc:
+  case DagNodeKind::Rising:
+  case DagNodeKind::Falling:
     State.InputWindow = RingBuffer(Spec.Period + 1);
     break;
   case DagNodeKind::Vwap:
   case DagNodeKind::StochK:
   case DagNodeKind::WillR:
   case DagNodeKind::Mfi:
+  case DagNodeKind::Pivot:
+  case DagNodeKind::PivotR1:
+  case DagNodeKind::PivotR2:
+  case DagNodeKind::PivotS1:
+  case DagNodeKind::PivotS2:
     State.InputWindow = RingBuffer(Spec.Period);
     State.AuxWindow = RingBuffer(Spec.Period);
+    break;
+  case DagNodeKind::KeltnerUpper:
+  case DagNodeKind::KeltnerLower:
+    State.EmaFast.InitWindow = RingBuffer(Spec.Period);
+    break;
+  case DagNodeKind::SwingHigh:
+  case DagNodeKind::SwingLow:
+    State.InputWindow = RingBuffer(Spec.Period + Spec.Period2 + 1);
     break;
   case DagNodeKind::StochD:
     State.InputWindow = RingBuffer(Spec.Period);
@@ -918,6 +1224,15 @@ DagNodeState makeDagNodeState(const DagNodeSpec &Spec) {
   case DagNodeKind::Obv:
   case DagNodeKind::Crossover:
   case DagNodeKind::Crossunder:
+  case DagNodeKind::SuperTrend:
+  case DagNodeKind::IsDoji:
+  case DagNodeKind::IsHammer:
+  case DagNodeKind::IsShootingStar:
+  case DagNodeKind::IsBullishEngulfing:
+  case DagNodeKind::IsBearishEngulfing:
+  case DagNodeKind::IsInsideBar:
+  case DagNodeKind::IsPinBar:
+  case DagNodeKind::BarsSince:
     break;
   }
   return State;
@@ -996,6 +1311,52 @@ double updateDagNode(const DagNodeSpec &Spec, DagNodeState &State,
     break;
   case DagNodeKind::Mfi:
     Result = updateMfi(Spec.Period, State, CurrentBar);
+    break;
+  case DagNodeKind::Pivot:
+  case DagNodeKind::PivotR1:
+  case DagNodeKind::PivotR2:
+  case DagNodeKind::PivotS1:
+  case DagNodeKind::PivotS2:
+    Result = updatePivotFamily(Spec, State, CurrentBar);
+    break;
+  case DagNodeKind::SuperTrend:
+    Result = updateSuperTrend(Spec.Period, State, InputA, CurrentBar);
+    break;
+  case DagNodeKind::KeltnerUpper:
+  case DagNodeKind::KeltnerLower:
+    Result = updateKeltner(Spec, State, InputA, CurrentBar);
+    break;
+  case DagNodeKind::Linreg:
+  case DagNodeKind::Slope:
+    Result = updateLinregFamily(Spec, State, InputA);
+    break;
+  case DagNodeKind::IsDoji:
+  case DagNodeKind::IsHammer:
+  case DagNodeKind::IsShootingStar:
+  case DagNodeKind::IsPinBar:
+    Result = updateSingleBarPattern(Spec.Kind, CurrentBar);
+    break;
+  case DagNodeKind::IsBullishEngulfing:
+    Result = updateEngulfing(State, CurrentBar, true);
+    break;
+  case DagNodeKind::IsBearishEngulfing:
+    Result = updateEngulfing(State, CurrentBar, false);
+    break;
+  case DagNodeKind::IsInsideBar:
+    Result = updateInsideBar(State, CurrentBar);
+    break;
+  case DagNodeKind::SwingHigh:
+  case DagNodeKind::SwingLow:
+    Result = updateSwing(Spec, State, CurrentBar);
+    break;
+  case DagNodeKind::Rising:
+    Result = updateMonotonic(Spec.Period, State, InputA, true);
+    break;
+  case DagNodeKind::Falling:
+    Result = updateMonotonic(Spec.Period, State, InputA, false);
+    break;
+  case DagNodeKind::BarsSince:
+    Result = updateBarsSince(State, InputA);
     break;
   }
   const double SafeResult = sanitizeFinite(Result);

@@ -666,4 +666,112 @@ rule "ta_all"
   EXPECT_EQ(countCode(AfterFix.Diagnostics, "L001"), 0U);
 }
 
+TEST(CheckTest, ChartAnalysisStaticCheckAndLinter) {
+  const std::string AllChartSrc = R"dsl(
+param p_n = 5 range 2..20 step 1
+param p_k = 2.5 range 1.0..4.0 step 0.5
+param p_left = 2 range 1..10 step 1
+param p_right = 2 range 1..10 step 1
+
+rule "chart_all"
+  when pivot(p_n)[1] > 0
+       and pivot_r1(p_n)[1] >= pivot(p_n)[1]
+       and pivot_r2(p_n)[1] >= pivot_r1(p_n)[1]
+       and pivot_s1(p_n)[1] <= pivot(p_n)[1]
+       and pivot_s2(p_n)[1] <= pivot_s1(p_n)[1]
+       and supertrend(p_n, p_k)[1] > 0
+       and keltner_upper(p_n, p_k)[1] >= keltner_lower(p_n, p_k)[1]
+       and linreg(close, p_n)[1] > 0
+       and slope(close, p_n)[1] == slope(close, p_n)[1]
+       and (is_doji() or is_hammer() or is_shooting_star()
+            or is_bullish_engulfing() or is_bearish_engulfing()
+            or is_inside_bar() or is_pin_bar())
+       and swing_high(p_left, p_right)[1] >= swing_low(p_left, p_right)[1]
+       and (rising(close, p_n) or falling(close, p_n))
+       and bars_since(is_doji())[1] >= 0
+       and bars_since(close > open) >= 0
+  then buy 1 lots
+  because "ok"
+)dsl";
+  const auto Res = dsl::check(AllChartSrc);
+  EXPECT_EQ(countCode(Res.Diagnostics, "E-SYN"), 0U);
+  EXPECT_EQ(countCode(Res.Diagnostics, "E-TYPE"), 0U);
+  EXPECT_EQ(countCode(Res.Diagnostics, "E-LA01"), 0U);
+  EXPECT_EQ(countCode(Res.Diagnostics, "E-LA02"), 0U);
+  ASSERT_EQ(Res.Params.size(), 4U);
+  EXPECT_TRUE(Res.Params[0].IsInteger);
+  EXPECT_FALSE(Res.Params[1].IsInteger);
+  EXPECT_TRUE(Res.Params[2].IsInteger);
+  EXPECT_TRUE(Res.Params[3].IsInteger);
+
+  const char *const BadCalls[] = {
+      "rule \"r\" when is_doji(1) then cancel because \"x\"",
+      "rule \"r\" when pivot() > 0 then cancel because \"x\"",
+      "rule \"r\" when supertrend(10) > 0 then cancel because \"x\"",
+      "rule \"r\" when swing_high(2) > 0 then cancel because \"x\"",
+      "rule \"r\" when rising(close) then cancel because \"x\"",
+      "rule \"r\" when bars_since() >= 0 then cancel because \"x\"",
+      "rule \"r\" when bars_since(close) >= 0 then cancel because \"x\"",
+      "rule \"r\" when rising(is_doji(), 2) then cancel because \"x\"",
+      "rule \"r\" when is_doji()[1] then cancel because \"x\"",
+      "rule \"r\" when rising(close, 2)[1] then cancel because \"x\"",
+      "rule \"r\" when falling(close, 2)[1] then cancel because \"x\"",
+      "rule \"r\" when bars_since(position > 0) >= 0 then cancel because \"x\"",
+      "rule \"r\" when linreg(equity, 5) > 0 then cancel because \"x\"",
+      "rule \"r\" when rising(cash, 2) then cancel because \"x\"",
+      "rule \"r\" when supertrend(10, position) > 0 then cancel because \"x\"",
+  };
+  for (const char *Case : BadCalls) {
+    EXPECT_TRUE(hasCode(dsl::check(Case).Diagnostics, "E-TYPE")) << Case;
+  }
+
+  EXPECT_EQ(countCode(dsl::check("rule \"r\" when pivot(20) > 250 "
+                                 "then cancel because \"x\"")
+                          .Diagnostics,
+                      "W-LA01"),
+            1U);
+  EXPECT_EQ(countCode(dsl::check("rule \"r\" when supertrend(10, 3.0) > 250 "
+                                 "then cancel because \"x\"")
+                          .Diagnostics,
+                      "W-LA01"),
+            1U);
+  EXPECT_EQ(countCode(dsl::check("rule \"r\" when keltner_upper(10, 2.0) > 250 "
+                                 "then cancel because \"x\"")
+                          .Diagnostics,
+                      "W-LA01"),
+            1U);
+  EXPECT_EQ(countCode(dsl::check("rule \"r\" when swing_high(2, 2) > 250 "
+                                 "then cancel because \"x\"")
+                          .Diagnostics,
+                      "W-LA01"),
+            1U);
+  EXPECT_EQ(countCode(dsl::check("rule \"r\" when linreg(close, 10) > 250 "
+                                 "then cancel because \"x\"")
+                          .Diagnostics,
+                      "W-LA01"),
+            1U);
+  EXPECT_EQ(countCode(dsl::check("rule \"r\" when slope(close, 10) > 2 "
+                                 "then cancel because \"x\"")
+                          .Diagnostics,
+                      "W-LA01"),
+            0U);
+  EXPECT_EQ(countCode(dsl::check("rule \"r\" when bars_since(is_doji()) > 5 "
+                                 "then cancel because \"x\"")
+                          .Diagnostics,
+                      "W-LA01"),
+            0U);
+
+  const std::string LinterChartSrc =
+      "rule \"r\" when supertrend(10, 3) < close and swing_high(3, 3) > close "
+      "and rising(close, 3) then cancel because \"x\"\n";
+  const auto LintRes = dsl::check(LinterChartSrc);
+  EXPECT_EQ(countCode(LintRes.Diagnostics, "L001"), 5U);
+  const std::string Fixed = dsl::applyEdits(
+      LinterChartSrc, collectEdits(LintRes.Diagnostics, "L001"));
+  const auto AfterFix2 = dsl::check(Fixed);
+  EXPECT_EQ(countCode(AfterFix2.Diagnostics, "E-SYN"), 0U);
+  EXPECT_EQ(countCode(AfterFix2.Diagnostics, "E-TYPE"), 0U);
+  EXPECT_EQ(countCode(AfterFix2.Diagnostics, "L001"), 0U);
+}
+
 } // namespace

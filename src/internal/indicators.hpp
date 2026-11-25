@@ -88,12 +88,41 @@ enum class DagNodeKind {
   BullPower,
   BearPower,
   Obv,
-  Mfi
+  Mfi,
+  Pivot,
+  PivotR1,
+  PivotR2,
+  PivotS1,
+  PivotS2,
+  SuperTrend,
+  KeltnerUpper,
+  KeltnerLower,
+  Linreg,
+  Slope,
+  IsDoji,
+  IsHammer,
+  IsShootingStar,
+  IsBullishEngulfing,
+  IsBearishEngulfing,
+  IsInsideBar,
+  IsPinBar,
+  SwingHigh,
+  SwingLow,
+  Rising,
+  Falling,
+  BarsSince
 };
 
 enum class SeriesKind { Open, High, Low, Close, Volume };
 
-enum class DagInputKind { None, Series, DagNode, Constant, ExprAst };
+enum class DagInputKind {
+  None,
+  Series,
+  DagNode,
+  Constant,
+  ExprAst,
+  BoolExprAst
+};
 
 /// Describes a single argument passed into a DAG node at step time.
 struct DagInputDesc {
@@ -161,6 +190,15 @@ struct DagNodeState {
   double PrevA = kNa;
   double PrevB = kNa;
   bool HasPrevCross = false;
+  double SuperTrendUpper = kNa;
+  double SuperTrendLower = kNa;
+  bool SuperTrendUp = true;
+  bool SuperTrendInitialized = false;
+  double PrevOpen = kNa;
+  double LastSwing = kNa;
+  bool HasSwing = false;
+  std::size_t BarsSinceCount = 0;
+  bool HasBarsSince = false;
 };
 
 /// Allocates buffers for `Spec` (`Output` and working windows if needed).
